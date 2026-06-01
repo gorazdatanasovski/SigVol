@@ -30,4 +30,4 @@ The system abandons continuous Black-Scholes delta hedging. Instead, it evaluate
 
 The execution interface runs entirely client-side, bypassing standard server latency via a pre-compiled JSON execution matrix simulating lock-free C11 atomic pointer logic.
 
-**[Link to Live Terminal Deployment]**
+[**[Link to Live Terminal Deployment]**](https://gorazdatanasovski.github.io/SigVol/)
