@@ -47,6 +47,7 @@ let axisData = [];
 let ticksMesh, gridsMesh;
 let sparseMesh, spineMesh, spineGlowMesh, rimMesh, crosshairMesh;
 let glowSpriteCore, glowSpriteCorona;
+let particlesMesh, particlesData = [];
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -327,18 +328,38 @@ function initThreeJS() {
 
     // DIRECTIVE 2: Peak Bloom as Property, not Object
     const coreMat = new THREE.SpriteMaterial({
-        map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending
+        map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending
     });
     glowSpriteCore = new THREE.Sprite(coreMat);
-    glowSpriteCore.scale.set(0.08, 0.08, 1); // 4px tight core
+    glowSpriteCore.scale.set(0.06, 0.06, 1); // 3px tight core
     surfaceGroup.add(glowSpriteCore);
 
     const coronaMat = new THREE.SpriteMaterial({
-        map: createGlowTexture(), color: 0xd8f4ff, transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending
+        map: createGlowTexture(), color: 0xe8f6ff, transparent: true, opacity: 0.09, depthWrite: false, blending: THREE.AdditiveBlending
     });
     glowSpriteCorona = new THREE.Sprite(coronaMat);
-    glowSpriteCorona.scale.set(0.25, 0.25, 1); // 14px soft corona
+    glowSpriteCorona.scale.set(0.21, 0.21, 1); // 12px soft corona
     surfaceGroup.add(glowSpriteCorona);
+    
+    // LIGHT TRANSMISSION PARTICLES
+    particlesMesh = new THREE.Group();
+    surfaceGroup.add(particlesMesh);
+    for (let i = 0; i < 20; i++) {
+        const mat = new THREE.SpriteMaterial({
+            map: createGlowTexture(), color: 0xb8e8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(0.02, 0.02, 1); // 1.5 - 2px
+        particlesMesh.add(sprite);
+        particlesData.push({
+            sprite: sprite,
+            active: false,
+            life: 0,
+            lifespan: 0,
+            baseOpacity: 0,
+            velocity: new THREE.Vector3()
+        });
+    }
     
     // DIRECTIVE 5: Crosshair at Peak
     const crossGeo = new THREE.BufferGeometry();
@@ -485,9 +506,52 @@ function animate() {
             uvs[i * 2 + 1] = v;
         }
 
-        if (glowSpriteCore) glowSpriteCore.position.set(maxX, maxY, maxZ);
-        if (glowSpriteCorona) glowSpriteCorona.position.set(maxX, maxY, maxZ);
+        const orbZ = maxZ + 0.35;
+        if (glowSpriteCore) glowSpriteCore.position.set(maxX, maxY, orbZ);
+        if (glowSpriteCorona) glowSpriteCorona.position.set(maxX, maxY, orbZ);
         if (crosshairMesh) crosshairMesh.position.set(maxX, maxY, maxZ + 0.005);
+        
+        // Particle Physics
+        for (let i = 0; i < particlesData.length; i++) {
+            let p = particlesData[i];
+            if (!p.active) {
+                p.active = true;
+                p.life = 0;
+                p.lifespan = 3.5 + Math.random(); // 3.5 to 4.5 seconds
+                p.baseOpacity = 0.35 + Math.random() * 0.30;
+                // Origin within 6px radius of orb (approx 0.06 units)
+                const r = Math.random() * 0.06;
+                const theta = Math.random() * Math.PI * 2;
+                p.sprite.position.set(maxX + r * Math.cos(theta), maxY + r * Math.sin(theta), orbZ);
+                // Velocity: downward (-Z) and outward (15 to 75 deg from vertical)
+                const outAngle = (15 + Math.random() * 60) * (Math.PI / 180);
+                const outDir = Math.random() * Math.PI * 2;
+                // Speed: ~0.3px per frame = approx 0.003 units per frame
+                const speed = 0.003;
+                p.velocity.set(
+                    Math.sin(outAngle) * Math.cos(outDir) * speed,
+                    Math.sin(outAngle) * Math.sin(outDir) * speed,
+                    -Math.cos(outAngle) * speed
+                );
+                p.sprite.material.opacity = p.baseOpacity;
+            }
+            // Update
+            p.life += 0.016; // approx 1 frame at 60fps
+            p.sprite.position.add(p.velocity);
+            
+            // Dissolve over last 20%
+            let alpha = p.baseOpacity;
+            const dissolveStart = p.lifespan * 0.8;
+            if (p.life > dissolveStart) {
+                const f = 1.0 - ((p.life - dissolveStart) / (p.lifespan - dissolveStart));
+                alpha = p.baseOpacity * Math.max(0, f);
+            }
+            p.sprite.material.opacity = alpha;
+            
+            if (p.life >= p.lifespan || p.sprite.position.z <= maxZ - 1.0) {
+                p.active = false;
+            }
+        }
 
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.uv.needsUpdate = true;
@@ -496,6 +560,7 @@ function animate() {
         // DIRECTIVE 5: Material Weight (Face Normals) applied to Vertex Colors
         const normals = geometry.attributes.normal.array;
         const colors = geometry.attributes.color.array;
+        const pPos = geometry.attributes.position.array;
         const lightDir = new THREE.Vector3(-1, 1, 1).normalize();
         const vNormal = new THREE.Vector3();
         for (let i = 0; i < geometry.attributes.position.count; i++) {
@@ -504,6 +569,19 @@ function animate() {
             let lum = 1.0;
             if (dot > 0) lum += dot * 0.10;
             else lum += dot * 0.06;
+            
+            // Surface Luminosity Response (+8%)
+            const vx = pPos[i*3];
+            const vy = pPos[i*3+1];
+            const dx = vx - maxX;
+            const dy = vy - maxY;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 0.4) {
+                const factor = 1.0 - (dist / 0.4);
+                const lift = factor * factor * 0.08; 
+                lum += lift;
+            }
+            
             colors[i*3] = lum;
             colors[i*3+1] = lum;
             colors[i*3+2] = lum;
