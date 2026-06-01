@@ -123,8 +123,8 @@ function initThreeJS() {
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
     // Camera Directive: Rotate 35° and tilt 8° upward. 
-    // Position adjusted to foreground the short-term OTM puts (skew crown).
-    camera.position.set(1.8, -2.5, 1.2); 
+    // Position zoomed out slightly based on feedback to prevent cropping
+    camera.position.set(2.34, -3.25, 1.56); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
