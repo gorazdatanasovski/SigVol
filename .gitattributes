@@ -1,6 +1,6 @@
-# Ignore frontend and data files in GitHub language statistics
-*.json linguist-vendored
-*.html linguist-vendored
+# Force Linguist to ignore all frontend and data payload files
+*.js linguist-vendored
 *.css linguist-vendored
-dist/* linguist-vendored
-public/* linguist-vendored
+*.html linguist-vendored
+*.json linguist-vendored
+Bloomberg-Microstructure-Data/* linguist-vendored
