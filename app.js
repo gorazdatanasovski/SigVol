@@ -123,8 +123,8 @@ function initThreeJS() {
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
     // Camera Directive: Rotate 35° and tilt 8° upward. 
-    // Position pulled back by 20% to frame the entire bounding box perfectly on load.
-    camera.position.set(2.2, -3.0, 1.5); 
+    // Position adjusted to foreground the short-term OTM puts (skew crown).
+    camera.position.set(1.8, -2.5, 1.2); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -225,8 +225,8 @@ function initThreeJS() {
     leftWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
     leftWallMesh.add(new THREE.LineSegments(edgesGeo, edgesMat)); // Crisp Perimeter
     leftWallMesh.add(createWallGrid()); // Faint inner grid
-    // Rotate to YZ plane so Local X = Global Y (Depth) and Local Y = Global Z (Height)
-    leftWallMesh.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    leftWallMesh.rotation.x = Math.PI / 2;
+    leftWallMesh.rotation.y = Math.PI / 2;
     surfaceGroup.add(leftWallMesh);
 
     // Crosshair for tooltip
@@ -344,31 +344,29 @@ function animate() {
         const box = new THREE.Box3().setFromObject(surfaceMesh);
         
         // DIRECTIVE 2.9: Spatial Calibration & Exact Bounding Dimensions
-        // DIRECTIVE 2.11: Geometric Symmetry & Floor Calibration
-        // Mapping physical dimensions correctly (Z is Height in our coordinate system)
-        const ExactHeight = box.max.z - box.min.z;
-        const ExactWidth = box.max.x - box.min.x;
-        const ExactDepth = box.max.y - box.min.y;
+        const widthX = box.max.x - box.min.x;
+        const depthY = box.max.y - box.min.y;
+        const heightZ = box.max.z - box.min.z;
         
-        const horizPadding = ExactWidth * 0.12; 
-        const depthPadding = horizPadding + (ExactWidth * 0.15); 
+        const horizPadding = widthX * 0.12; 
+        const vertPadding = heightZ * 0.08; // Triple/Quadruple the distance below the surface
         
-        // Double the Floor Drop
-        const vertPadding = ExactHeight * 0.04; 
-        
-        // Floor Position: Standalone grid hovering significantly below the surface
+        // Floor Position: Standalone grid pushed down further
         floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - vertPadding);
         
-        // The "Symmetry of Height" Law: Both vertical walls perfectly locked to ExactHeight
-        // The Depth/Width Lock: Left Wall stops exactly where data stops (ExactDepth)
-        backWallMesh.scale.set(ExactWidth, ExactHeight, 1);
-        leftWallMesh.scale.set(ExactDepth, ExactHeight, 1);
+        // Wall Scales: Extend the wall height down to the floor grid, top edge stays at max.z
+        const wallHeightZ = heightZ + vertPadding;
+        backWallMesh.scale.set(widthX, wallHeightZ, 1);
+        leftWallMesh.scale.set(depthY, wallHeightZ, 1);
         
-        // Back Wall perfectly cups the Z-bounds
-        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + depthPadding, box.min.z + (ExactHeight) / 2);
+        // Wall positions: Center Z is now halfway between max.z and (min.z - vertPadding)
+        const centerZ = (box.max.z + (box.min.z - vertPadding)) / 2;
         
-        // Left Wall perfectly cups the Z-bounds and runs parallel to the Y-axis data edge
-        leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, box.min.z + (ExactHeight) / 2);
+        // Back Wall: Pushed back by horizPadding.
+        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + horizPadding, centerZ);
+        
+        // Left Wall: Pushed left by horizPadding.
+        leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, centerZ);
     }
 
     controls.update(); 
