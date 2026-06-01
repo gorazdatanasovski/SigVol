@@ -184,7 +184,14 @@ function initThreeJS() {
     const wireframeMesh = new THREE.Mesh(geometry, wireframeMaterial);
     surfaceGroup.add(wireframeMesh);
 
-    // DIRECTIVE 2.7: Orthogonal Glass Walls
+    // DIRECTIVE 2.8: The Floor Grid (Standalone GridHelper, No Glass)
+    floorMesh = new THREE.GridHelper(2, 20, 0xffffff, 0xffffff);
+    floorMesh.material.opacity = 0.08;
+    floorMesh.material.transparent = true;
+    floorMesh.rotation.x = Math.PI / 2; // Align to local XY plane
+    surfaceGroup.add(floorMesh);
+
+    // DIRECTIVE 2.8: The Panel Frames (Crisp Borders and Smoked Glass)
     const glassMaterial = new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
         transparent: true,
@@ -194,17 +201,30 @@ function initThreeJS() {
         side: THREE.DoubleSide
     });
 
-    floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
-    // Floor is flat (no rotation needed relative to XY plane)
-    surfaceGroup.add(floorMesh);
+    const wallGeo = new THREE.PlaneGeometry(1, 1);
+    const edgesGeo = new THREE.EdgesGeometry(wallGeo);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.2, transparent: true });
 
-    backWallMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
-    // Back Wall stands straight up
+    // Inner Grid for Panels (leaves padding because size is 0.9 inside a 1.0 wall)
+    function createWallGrid() {
+        const grid = new THREE.GridHelper(0.9, 10, 0xffffff, 0xffffff);
+        grid.material.opacity = 0.04;
+        grid.material.transparent = true;
+        grid.rotation.x = Math.PI / 2; // Align with the wall plane
+        return grid;
+    }
+
+    // Back Wall
+    backWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
+    backWallMesh.add(new THREE.LineSegments(edgesGeo, edgesMat)); // Crisp Perimeter
+    backWallMesh.add(createWallGrid()); // Faint inner grid
     backWallMesh.rotation.x = Math.PI / 2;
     surfaceGroup.add(backWallMesh);
 
-    leftWallMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
-    // Left Wall stands straight up AND turns 90 degrees
+    // Left Wall
+    leftWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
+    leftWallMesh.add(new THREE.LineSegments(edgesGeo, edgesMat)); // Crisp Perimeter
+    leftWallMesh.add(createWallGrid()); // Faint inner grid
     leftWallMesh.rotation.x = Math.PI / 2;
     leftWallMesh.rotation.y = Math.PI / 2;
     surfaceGroup.add(leftWallMesh);
@@ -222,17 +242,17 @@ function initThreeJS() {
     
     // Removed hardcoded bounding box lines
 
-    // Anchored labels
+    // DIRECTIVE 2.8: Tick Alignment (Floating outside the frames)
     const labelStrike = makeTextSprite("STRIKE");
-    labelStrike.position.set(0, -1.05, 0); // Tucked to axis base
+    labelStrike.position.set(0, -1.2, -0.1); 
     scene.add(labelStrike);
 
     const labelDTE = makeTextSprite("DTE");
-    labelDTE.position.set(-1.05, 0, 0);
+    labelDTE.position.set(-1.2, 0, -0.1);
     scene.add(labelDTE);
 
-    const labelIV = makeTextSprite("IV");
-    labelIV.position.set(1.05, 1.05, 0.75);
+    const labelIV = makeTextSprite("IMPLIED VOL");
+    labelIV.position.set(1.15, 1.15, 0.75);
     scene.add(labelIV);
 
     current_IV = new Array(gridX * gridY).fill(0);
@@ -327,17 +347,21 @@ function animate() {
         const depthY = box.max.y - box.min.y;
         const heightZ = box.max.z - box.min.z;
         
-        // Floor Position: Y-coordinate mathematically mapped to local Z
-        floorMesh.scale.set(widthX, depthY, 1);
-        floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z);
+        // DIRECTIVE 2.8: The Anti-Box Rule (Corner gaps and elevation)
+        const gap = 0.06; // Empty space distance
+        const shrink = 0.94; // Shrink panel width by 6% to leave the corner open
         
-        // Back Wall Position: Depth coordinate mathematically mapped to local Y
-        backWallMesh.scale.set(widthX, heightZ, 1);
-        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y, (box.max.z + box.min.z) / 2);
+        // Floor Position: Standalone grid hovering exactly below the surface
+        // GridHelper does not scale like a plane, it is fixed size 2x2. We just position it.
+        floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - gap);
         
-        // Left Wall Position: exactly box.min.x
-        leftWallMesh.scale.set(depthY, heightZ, 1);
-        leftWallMesh.position.set(box.min.x, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
+        // Back Wall Position: Shrink width, push back, and elevate above floor
+        backWallMesh.scale.set(widthX * shrink, heightZ, 1);
+        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + gap, ((box.max.z + box.min.z) / 2) + gap);
+        
+        // Left Wall Position: Shrink depth, push left, and elevate above floor
+        leftWallMesh.scale.set(depthY * shrink, heightZ, 1);
+        leftWallMesh.position.set(box.min.x - gap, (box.max.y + box.min.y) / 2, ((box.max.z + box.min.z) / 2) + gap);
     }
 
     controls.update(); 
