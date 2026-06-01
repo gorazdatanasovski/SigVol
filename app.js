@@ -45,6 +45,8 @@ let surfaceGroup;
 let floorMesh, backWallMesh, leftWallMesh;
 let axisData = [];
 let ticksMesh, gridsMesh;
+let sparseMesh;
+let glowSprite;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -92,7 +94,7 @@ function makeAxisLabel(message) {
     canvas.height = 64;
     const context = canvas.getContext('2d');
     context.font = '400 24px "JetBrains Mono", monospace';
-    context.fillStyle = 'rgba(255, 255, 255, 0.50)'; // White at 50% opacity
+    context.fillStyle = 'rgba(255, 255, 255, 0.35)'; // White at 35% opacity
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillText(message, 128, 32);
@@ -109,6 +111,60 @@ function makeAxisLabel(message) {
     return sprite;
 }
 
+function createEdgeAlphaTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 512, 512);
+    
+    const edgeSize = 77;
+    
+    let gLeft = ctx.createLinearGradient(0, 0, edgeSize, 0);
+    gLeft.addColorStop(0, 'rgba(0,0,0,1)');
+    gLeft.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gLeft;
+    ctx.fillRect(0, 0, edgeSize, 512);
+    
+    let gRight = ctx.createLinearGradient(512-edgeSize, 0, 512, 0);
+    gRight.addColorStop(0, 'rgba(0,0,0,0)');
+    gRight.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = gRight;
+    ctx.fillRect(512-edgeSize, 0, edgeSize, 512);
+    
+    let gTop = ctx.createLinearGradient(0, 0, 0, edgeSize);
+    gTop.addColorStop(0, 'rgba(0,0,0,1)');
+    gTop.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gTop;
+    ctx.fillRect(0, 0, 512, edgeSize);
+    
+    let gBot = ctx.createLinearGradient(0, 512-edgeSize, 0, 512);
+    gBot.addColorStop(0, 'rgba(0,0,0,0)');
+    gBot.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = gBot;
+    ctx.fillRect(0, 512-edgeSize, 512, edgeSize);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    return texture;
+}
+
+function createGlowTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,64,64);
+    return new THREE.CanvasTexture(canvas);
+}
+
 function createIsolineTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 1;
@@ -117,11 +173,10 @@ function createIsolineTexture() {
     
     // V2.0 5-Stop Gradient Map
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    gradient.addColorStop(0.00, '#0A4275'); // Luminous cobalt base
-    gradient.addColorStop(0.25, '#1A5276'); // Dark blue
-    gradient.addColorStop(0.50, '#0E6655'); // Teal
-    gradient.addColorStop(0.75, '#B7770D'); // Amber
-    gradient.addColorStop(1.00, '#C0392B'); // Surgical red
+    gradient.addColorStop(0.00, '#0a0c10'); // Near-black void base
+    gradient.addColorStop(0.33, '#1a2639'); // Desaturated steel-blue
+    gradient.addColorStop(0.66, '#e8edf5'); // Cool white-platinum
+    gradient.addColorStop(1.00, '#ffffff'); // Overexposed peak
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 1, 1024);
@@ -147,8 +202,8 @@ function initThreeJS() {
 
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
-    // Camera Directive: Aggressive low angle, looking across the floor at the asymptote
-    camera.position.set(1.6, -2.5, 0.4); 
+    // DIRECTIVE 6: Reposition Camera (33deg elevation, rotate azimuth)
+    camera.position.set(2.95, -1.99, 2.40); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -159,15 +214,13 @@ function initThreeJS() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.autoRotate = false;
     controls.enableDamping = true;
-    controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent camera from dropping under the floor
 
-    // DIRECTIVE 2.7: Kill the "Flashlight" Specular Highlight
-    // Replace with distant DirectionalLight and soft AmbientLight
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    // DIRECTIVE 4: Introduce directional lighting / Phong shading
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // Near black ambient
     scene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight.position.set(100, 200, 50); 
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(-100, -100, 100); // Upper-left conceptual
     scene.add(dirLight);
 
     const firstFrame = playbackData[0];
@@ -181,16 +234,17 @@ function initThreeJS() {
     
     const pbrTexture = createIsolineTexture();
     
-    // DIRECTIVE 2.7: Matte platinum sheen, not blinding plastic
-    const material = new THREE.MeshPhysicalMaterial({ 
+    // DIRECTIVE 4: Phong Shading and Edge Dissolve
+    const material = new THREE.MeshPhongMaterial({ 
         map: pbrTexture,
         emissiveMap: pbrTexture,
         emissive: new THREE.Color(0xffffff),
-        emissiveIntensity: 0.3, 
-        side: THREE.DoubleSide,
-        roughness: 0.35, // matte sheen
-        metalness: 0.9,  // high metalness
-        clearcoat: 0.0   // kill the plastic reflection
+        emissiveIntensity: 0.05, 
+        specular: new THREE.Color('#e8edf5'), // Cold white highlight
+        shininess: 60,
+        alphaMap: createEdgeAlphaTexture(), // DIRECTIVE 5: Edge dissolve
+        transparent: true,
+        side: THREE.DoubleSide
     });
 
     surfaceGroup = new THREE.Group();
@@ -199,19 +253,22 @@ function initThreeJS() {
     surfaceMesh = new THREE.Mesh(geometry, material);
     surfaceGroup.add(surfaceMesh);
 
-    // Bloomberg-style subtle wireframe overlay for structural readability
-    const wireframeMaterial = new THREE.MeshBasicMaterial({
+    // DIRECTIVE 2: Peak Bloom Sprite
+    const glowMat = new THREE.SpriteMaterial({
+        map: createGlowTexture(),
         color: 0xffffff,
-        wireframe: true,
         transparent: true,
-        opacity: 0.25 // Weaponize the wireframe
+        opacity: 0.9,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
     });
-    const wireframeMesh = new THREE.Mesh(geometry, wireframeMaterial);
-    surfaceGroup.add(wireframeMesh);
+    glowSprite = new THREE.Sprite(glowMat);
+    glowSprite.scale.set(0.6, 0.6, 1); 
+    surfaceGroup.add(glowSprite);
 
-    // DIRECTIVE 2.8: The Floor Grid (Standalone GridHelper, No Glass)
-    floorMesh = new THREE.GridHelper(2, 20, 0xffffff, 0xffffff);
-    floorMesh.material.opacity = 0.08;
+    // DIRECTIVE 7: Floor to 4x4 maximum, near-invisible dark tone
+    floorMesh = new THREE.GridHelper(2, 4, 0x1a1d24, 0x1a1d24);
+    floorMesh.material.opacity = 1.0;
     floorMesh.material.transparent = true;
     floorMesh.rotation.x = Math.PI / 2; // Align to local XY plane
     surfaceGroup.add(floorMesh);
@@ -301,6 +358,9 @@ function animate() {
             }
         }
 
+        let maxZ = -Infinity;
+        let maxX = 0, maxY = 0;
+
         for (let i = 0; i < current_IV.length; i++) {
             const tIV = isNaN(target_IV[i]) ? 0 : target_IV[i];
             current_IV[i] += (tIV - current_IV[i]) * 0.08;
@@ -325,19 +385,60 @@ function animate() {
                 }
             }
             
-            const rawZ = current_IV[i] + zRipple;
-            const totalZ = rawZ * 1.8; // Exaggerate the asymptote vertically (Directive 2.13)
+            const totalZ = current_IV[i] + zRipple;
             positions[i * 3 + 2] = totalZ;
 
-            // Map Z-height to V coordinate using the RAW height for the Isoline/Obsidian Texture
-            let v = rawZ / 1.5;
+            if (totalZ > maxZ) {
+                maxZ = totalZ;
+                maxX = positions[i * 3];
+                maxY = positions[i * 3 + 1];
+            }
+
+            // Map Z-height to V coordinate for the Isoline/Obsidian Texture
+            let v = totalZ / 1.5;
             v = Math.max(0, Math.min(1, v));
             uvs[i * 2 + 1] = v;
+        }
+
+        if (glowSprite) {
+            glowSprite.position.set(maxX, maxY, maxZ);
         }
 
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.uv.needsUpdate = true;
         geometry.computeVertexNormals(); 
+        
+        // DIRECTIVE 3: Sparse 8x8 Structural Mesh
+        const sparsePoints = [];
+        const xStep = Math.max(1, Math.floor(gridX / 8));
+        const yStep = Math.max(1, Math.floor(gridY / 8));
+        
+        for (let ix = 0; ix < gridX; ix += xStep) {
+            for (let iy = 0; iy < gridY - 1; iy++) {
+                const idx1 = iy * gridX + ix;
+                const idx2 = (iy + 1) * gridX + ix;
+                sparsePoints.push(
+                    new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2]),
+                    new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2])
+                );
+            }
+        }
+        for (let iy = 0; iy < gridY; iy += yStep) {
+            for (let ix = 0; ix < gridX - 1; ix++) {
+                const idx1 = iy * gridX + ix;
+                const idx2 = iy * gridX + (ix + 1);
+                sparsePoints.push(
+                    new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2]),
+                    new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2])
+                );
+            }
+        }
+        if (!sparseMesh) {
+            const smat = new THREE.LineBasicMaterial({ color: 0x1a2639, transparent: true, opacity: 0.25 }); 
+            sparseMesh = new THREE.LineSegments(new THREE.BufferGeometry(), smat);
+            surfaceGroup.add(sparseMesh);
+        }
+        sparseMesh.geometry.setFromPoints(sparsePoints);
         
         // DIRECTIVE 2.7: Dynamic Bounding Box Anchoring
         surfaceMesh.geometry.computeBoundingBox();
@@ -368,9 +469,8 @@ function animate() {
         // Left Wall: Pushed left by horizPadding.
         leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, centerZ);
 
-        // DIRECTIVE 2.12: The Obsidian Axes
+        // DIRECTIVE 2.12: The Obsidian Axes (Ticks only, no internal grids)
         const tickPoints = [];
-        const gridPoints = [];
         
         const backWallZ = box.max.y + horizPadding;
         const leftWallX = box.min.x - horizPadding;
@@ -383,28 +483,22 @@ function animate() {
             if (item.type === 'iv_back') {
                 const z = wallBottomZ + item.ratio * (wallTopZ - wallBottomZ);
                 const xRight = box.max.x; 
-                const xLeft = box.min.x;
-                gridPoints.push(new THREE.Vector3(xLeft, backWallZ, z), new THREE.Vector3(xRight, backWallZ, z));
                 tickPoints.push(new THREE.Vector3(xRight, backWallZ, z), new THREE.Vector3(xRight + tickLen, backWallZ, z));
                 item.sprite.position.set(xRight + tickLen + gap + 0.125, backWallZ, z); 
             }
             else if (item.type === 'iv_left') {
                 const z = wallBottomZ + item.ratio * (wallTopZ - wallBottomZ);
-                const yBack = box.max.y;
                 const yFront = box.min.y;
-                gridPoints.push(new THREE.Vector3(leftWallX, yFront, z), new THREE.Vector3(leftWallX, yBack, z));
                 tickPoints.push(new THREE.Vector3(leftWallX, yFront, z), new THREE.Vector3(leftWallX, yFront - tickLen, z));
                 item.sprite.position.set(leftWallX, yFront - tickLen - gap - 0.125, z);
             }
             else if (item.type === 'strike') {
                 const x = box.min.x + item.ratio * widthX;
-                gridPoints.push(new THREE.Vector3(x, backWallZ, wallBottomZ), new THREE.Vector3(x, backWallZ, wallTopZ));
                 tickPoints.push(new THREE.Vector3(x, backWallZ, wallBottomZ), new THREE.Vector3(x, backWallZ, wallBottomZ - tickLen));
                 item.sprite.position.set(x, backWallZ, wallBottomZ - tickLen - gap - 0.03125);
             }
             else if (item.type === 'dte') {
                 const y = box.min.y + item.ratio * depthY;
-                gridPoints.push(new THREE.Vector3(leftWallX, y, wallBottomZ), new THREE.Vector3(leftWallX, y, wallTopZ));
                 tickPoints.push(new THREE.Vector3(leftWallX, y, wallBottomZ), new THREE.Vector3(leftWallX, y, wallBottomZ - tickLen));
                 item.sprite.position.set(leftWallX, y, wallBottomZ - tickLen - gap - 0.03125);
             }
@@ -423,13 +517,8 @@ function animate() {
             const tMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }); // Anchored ticks
             ticksMesh = new THREE.LineSegments(new THREE.BufferGeometry(), tMat);
             surfaceGroup.add(ticksMesh);
-            
-            const gMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.04 });
-            gridsMesh = new THREE.LineSegments(new THREE.BufferGeometry(), gMat);
-            surfaceGroup.add(gridsMesh);
         }
         ticksMesh.geometry.setFromPoints(tickPoints);
-        gridsMesh.geometry.setFromPoints(gridPoints);
     }
 
     controls.update(); 
