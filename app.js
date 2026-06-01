@@ -172,52 +172,89 @@ function generateMeshColorCache() {
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 256, 0, 0);
-    gradient.addColorStop(0.00, '#0d1f35'); 
-    gradient.addColorStop(0.35, '#1a4a7a'); 
-    gradient.addColorStop(0.62, '#2979b8'); 
-    gradient.addColorStop(0.65, '#3d9fd4'); // Subsurface luminosity peak OTM
-    gradient.addColorStop(0.82, '#56b4e8'); 
-    gradient.addColorStop(0.94, '#a8dff7'); 
+    // DIRECTIVE 1: Re-anchored Floor
+    gradient.addColorStop(0.00, '#1e4060'); 
+    gradient.addColorStop(0.20, '#2a5c8a'); 
+    gradient.addColorStop(0.40, '#3478b0'); 
+    gradient.addColorStop(0.60, '#4a9fd4'); 
+    // DIRECTIVE 4: Power-law Peak Approach
+    gradient.addColorStop(0.70, '#4a9fd4'); 
+    gradient.addColorStop(0.78, '#6cbde8'); 
+    gradient.addColorStop(0.85, '#90d4f5'); 
+    gradient.addColorStop(0.91, '#beeeff'); 
+    gradient.addColorStop(0.96, '#e4f8ff'); 
     gradient.addColorStop(1.00, '#ffffff'); 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 1, 256);
     const data = ctx.getImageData(0, 0, 1, 256).data;
     for (let i = 0; i < 256; i++) {
         const idx = (255 - i) * 4; 
-        const c = new THREE.Color(`rgb(${data[idx]}, ${data[idx+1]}, ${data[idx+2]})`);
-        const hsl = {};
-        c.getHSL(hsl);
-        c.setHSL(hsl.h, hsl.s, Math.min(1.0, hsl.l + 0.22)); // +22% luminosity
+        let r = data[idx], g = data[idx+1], b = data[idx+2];
+        // DIRECTIVE 3: Mesh Visibility Floor (#2a5878 -> 42, 88, 120)
+        r = Math.max(r, 42);
+        g = Math.max(g, 88);
+        b = Math.max(b, 120);
+        const c = new THREE.Color(`rgb(${r}, ${g}, ${b})`);
         meshColorsCache.push(c);
     }
 }
 
 function createIsolineTexture() {
     const canvas = document.createElement('canvas');
-    canvas.width = 1;
+    canvas.width = 256;
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     
-    // Ice Blue progression with subsurface luminosity
+    // DIRECTIVE 1 & 4: Floor and Power-law Peak
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    gradient.addColorStop(0.00, '#0d1f35'); // Deep cold navy floor
-    gradient.addColorStop(0.35, '#1a4a7a'); // Medium navy lower body
-    gradient.addColorStop(0.62, '#2979b8'); // Strong steel blue mid body
-    gradient.addColorStop(0.65, '#3d9fd4'); // Subsurface luminosity peak OTM
-    gradient.addColorStop(0.82, '#56b4e8'); // Bright ice blue upper mid
-    gradient.addColorStop(0.94, '#a8dff7'); // Pale electric blue high vol
-    gradient.addColorStop(1.00, '#ffffff'); // Pure white apex
+    gradient.addColorStop(0.00, '#1e4060'); 
+    gradient.addColorStop(0.20, '#2a5c8a'); 
+    gradient.addColorStop(0.40, '#3478b0'); 
+    gradient.addColorStop(0.60, '#4a9fd4'); 
+    gradient.addColorStop(0.70, '#4a9fd4'); 
+    gradient.addColorStop(0.78, '#6cbde8'); 
+    gradient.addColorStop(0.85, '#90d4f5'); 
+    gradient.addColorStop(0.91, '#beeeff'); 
+    gradient.addColorStop(0.96, '#e4f8ff'); 
+    gradient.addColorStop(1.00, '#ffffff'); 
     
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1, 1024);
+    ctx.fillRect(0, 0, 256, 1024);
+    
+    // DIRECTIVE 2: Skew Cyan Shift (Put Wing)
+    const cyanGradient = ctx.createLinearGradient(0, 1024, 0, 0);
+    cyanGradient.addColorStop(0.00, '#15324d'); 
+    cyanGradient.addColorStop(0.20, '#204a6e'); 
+    cyanGradient.addColorStop(0.40, '#2a8ab0'); // +12 Green hue shift
+    cyanGradient.addColorStop(0.60, '#3aa6d4'); 
+    cyanGradient.addColorStop(0.70, 'rgba(74, 159, 212, 0)'); 
+    cyanGradient.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = 256;
+    maskCanvas.height = 1024;
+    const mCtx = maskCanvas.getContext('2d');
+    mCtx.fillStyle = cyanGradient;
+    mCtx.fillRect(0, 0, 256, 1024);
+    
+    mCtx.globalCompositeOperation = 'destination-in';
+    const hGrad = mCtx.createLinearGradient(0, 0, 256, 0);
+    hGrad.addColorStop(0.0, 'rgba(0,0,0,1)'); // Solid on put wing
+    hGrad.addColorStop(0.35, 'rgba(0,0,0,0)'); // Fade before ATM
+    hGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
+    mCtx.fillStyle = hGrad;
+    mCtx.fillRect(0, 0, 256, 1024);
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(maskCanvas, 0, 0);
     
     // Topographic Contours (70th, 85th, 95th)
     ctx.fillStyle = 'rgba(160, 228, 255, 0.28)';
-    ctx.fillRect(0, Math.floor(1024 * (1 - 0.70)), 1, 1);
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.70)), 256, 2);
     ctx.fillStyle = 'rgba(160, 228, 255, 0.38)';
-    ctx.fillRect(0, Math.floor(1024 * (1 - 0.85)), 1, 1);
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.85)), 256, 2);
     ctx.fillStyle = 'rgba(160, 228, 255, 0.50)';
-    ctx.fillRect(0, Math.floor(1024 * (1 - 0.95)), 1, 1);
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.95)), 256, 2);
     
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
@@ -262,12 +299,14 @@ function initThreeJS() {
     gridY = dtesList.length;
 
     geometry = new THREE.PlaneGeometry(2, 2, gridX - 1, gridY - 1);
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(gridX * gridY * 3).fill(1), 3));
     
     const pbrTexture = createIsolineTexture();
     
     // DIRECTIVE 4: Phong Shading and Edge Dissolve
     const material = new THREE.MeshPhongMaterial({ 
         map: pbrTexture,
+        vertexColors: true,
         emissiveMap: pbrTexture,
         emissive: new THREE.Color(0xffffff),
         emissiveIntensity: 0.05, 
@@ -291,14 +330,14 @@ function initThreeJS() {
         map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending
     });
     glowSpriteCore = new THREE.Sprite(coreMat);
-    glowSpriteCore.scale.set(0.15, 0.15, 1); // 8px tight core
+    glowSpriteCore.scale.set(0.08, 0.08, 1); // 4px tight core
     surfaceGroup.add(glowSpriteCore);
 
     const coronaMat = new THREE.SpriteMaterial({
-        map: createGlowTexture(), color: 0xe8f8ff, transparent: true, opacity: 0.06, depthWrite: false, blending: THREE.AdditiveBlending
+        map: createGlowTexture(), color: 0xd8f4ff, transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending
     });
     glowSpriteCorona = new THREE.Sprite(coronaMat);
-    glowSpriteCorona.scale.set(0.4, 0.4, 1); // 22px soft corona
+    glowSpriteCorona.scale.set(0.25, 0.25, 1); // 14px soft corona
     surfaceGroup.add(glowSpriteCorona);
     
     // DIRECTIVE 5: Crosshair at Peak
@@ -454,6 +493,23 @@ function animate() {
         geometry.attributes.uv.needsUpdate = true;
         geometry.computeVertexNormals(); 
         
+        // DIRECTIVE 5: Material Weight (Face Normals) applied to Vertex Colors
+        const normals = geometry.attributes.normal.array;
+        const colors = geometry.attributes.color.array;
+        const lightDir = new THREE.Vector3(-1, 1, 1).normalize();
+        const vNormal = new THREE.Vector3();
+        for (let i = 0; i < geometry.attributes.position.count; i++) {
+            vNormal.set(normals[i*3], normals[i*3+1], normals[i*3+2]);
+            const dot = vNormal.dot(lightDir);
+            let lum = 1.0;
+            if (dot > 0) lum += dot * 0.10;
+            else lum += dot * 0.06;
+            colors[i*3] = lum;
+            colors[i*3+1] = lum;
+            colors[i*3+2] = lum;
+        }
+        geometry.attributes.color.needsUpdate = true;
+        
         // DIRECTIVE 2: Precision 10x10 Structural Mesh
         const sparsePoints = [];
         const xStep = Math.max(1, Math.floor(gridX / 10));
@@ -556,7 +612,7 @@ function animate() {
             );
         }
         if (!rimMesh) {
-            const rMat = new THREE.LineBasicMaterial({ color: 0x5bbde0, transparent: true, opacity: 0.45 });
+            const rMat = new THREE.LineBasicMaterial({ color: 0x7dd4f7, transparent: true, opacity: 0.50 });
             rimMesh = new THREE.LineSegments(new THREE.BufferGeometry(), rMat);
             surfaceGroup.add(rimMesh);
         }
