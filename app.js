@@ -123,8 +123,8 @@ function initThreeJS() {
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
     // Camera Directive: Rotate 35° and tilt 8° upward. 
-    // Position adjusted to foreground the short-term OTM puts (skew crown).
-    camera.position.set(1.8, -2.5, 1.2); 
+    // Position pulled back by 20% to frame the entire bounding box perfectly on load.
+    camera.position.set(2.2, -3.0, 1.5); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -348,20 +348,21 @@ function animate() {
         const depthY = box.max.y - box.min.y;
         const heightZ = box.max.z - box.min.z;
         
-        const horizPadding = widthX * 0.12; // 12% gap offset (Double the previous spatial gap)
+        const horizPadding = widthX * 0.12; // 12% gap offset for left wall
+        const depthPadding = horizPadding + (widthX * 0.15); // Add 15% breathing room for back wall
         const vertPadding = heightZ * 0.02; // 2% floor elevation
         
         // Floor Position: Standalone grid pushed down by 2%
         floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - vertPadding);
         
-        // Wall Scales: Exact dimensions of the data bounding box. Not a pixel more.
-        backWallMesh.scale.set(widthX, heightZ, 1);
+        // Wall Scales: Left matches exactly. Back wall is dropped by 10%.
+        backWallMesh.scale.set(widthX, heightZ * 0.90, 1);
         leftWallMesh.scale.set(depthY, heightZ, 1);
         
-        // Back Wall: Pushed back by horizPadding. Z perfectly cups data (bottom at min.z, top at max.z)
-        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + horizPadding, (box.max.z + box.min.z) / 2);
+        // Back Wall: Pushed back by depthPadding. Lowered so the spike physically breaks the glass plane.
+        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + depthPadding, box.min.z + (heightZ * 0.90) / 2);
         
-        // Left Wall: Pushed left by horizPadding. Z perfectly cups data (bottom at min.z, top at max.z)
+        // Left Wall: Pushed left by horizPadding. Z perfectly cups data
         leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     }
 
