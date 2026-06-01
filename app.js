@@ -43,6 +43,8 @@ let ripples = [];
 let crosshair;
 let surfaceGroup;
 let floorMesh, backWallMesh, leftWallMesh;
+let axisData = [];
+let ticksMesh, gridsMesh;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -81,6 +83,29 @@ function makeTextSprite(message) {
     
     // Baseline anchored, tiny labels (9px equivalent)
     sprite.scale.set(0.25, 0.0625, 1.0);
+    return sprite;
+}
+
+function makeAxisLabel(message) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    context.font = '400 24px "JetBrains Mono", monospace';
+    context.fillStyle = 'rgba(255, 255, 255, 0.35)'; // White at 35% opacity
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(message, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMaterial = new THREE.SpriteMaterial({ 
+        map: texture, 
+        transparent: true,
+        depthWrite: false
+    });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(0.25, 0.0625, 1.0); // 9px equivalent
     return sprite;
 }
 
@@ -205,26 +230,15 @@ function initThreeJS() {
     const edgesGeo = new THREE.EdgesGeometry(wallGeo);
     const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.2, transparent: true });
 
-    // Inner Grid for Panels (leaves padding because size is 0.9 inside a 1.0 wall)
-    function createWallGrid() {
-        const grid = new THREE.GridHelper(0.9, 10, 0xffffff, 0xffffff);
-        grid.material.opacity = 0.04;
-        grid.material.transparent = true;
-        grid.rotation.x = Math.PI / 2; // Align with the wall plane
-        return grid;
-    }
-
     // Back Wall
     backWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
     backWallMesh.add(new THREE.LineSegments(edgesGeo, edgesMat)); // Crisp Perimeter
-    backWallMesh.add(createWallGrid()); // Faint inner grid
     backWallMesh.rotation.x = Math.PI / 2;
     surfaceGroup.add(backWallMesh);
 
     // Left Wall
     leftWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
     leftWallMesh.add(new THREE.LineSegments(edgesGeo, edgesMat)); // Crisp Perimeter
-    leftWallMesh.add(createWallGrid()); // Faint inner grid
     leftWallMesh.rotation.x = Math.PI / 2;
     leftWallMesh.rotation.y = Math.PI / 2;
     surfaceGroup.add(leftWallMesh);
@@ -239,21 +253,6 @@ function initThreeJS() {
     crosshair = new THREE.LineSegments(crosshairGeo, crosshairMat);
     crosshair.visible = false;
     scene.add(crosshair);
-    
-    // Removed hardcoded bounding box lines
-
-    // DIRECTIVE 2.8: Tick Alignment (Floating outside the frames)
-    const labelStrike = makeTextSprite("STRIKE");
-    labelStrike.position.set(0, -1.2, -0.1); 
-    scene.add(labelStrike);
-
-    const labelDTE = makeTextSprite("DTE");
-    labelDTE.position.set(-1.2, 0, -0.1);
-    scene.add(labelDTE);
-
-    const labelIV = makeTextSprite("IMPLIED VOL");
-    labelIV.position.set(1.15, 1.15, 0.75);
-    scene.add(labelIV);
 
     current_IV = new Array(gridX * gridY).fill(0);
     target_IV = new Array(gridX * gridY).fill(0);
@@ -367,6 +366,69 @@ function animate() {
         
         // Left Wall: Pushed left by horizPadding.
         leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, centerZ);
+
+        // DIRECTIVE 2.12: The Obsidian Axes
+        const tickPoints = [];
+        const gridPoints = [];
+        
+        const backWallZ = box.max.y + horizPadding;
+        const leftWallX = box.min.x - horizPadding;
+        const wallBottomZ = box.min.z - vertPadding;
+        const wallTopZ = box.max.z;
+        const tickLen = 0.04; // 4px visual equivalent
+        const gap = 0.04;
+        
+        axisData.forEach(item => {
+            if (item.type === 'iv_back') {
+                const z = wallBottomZ + item.ratio * (wallTopZ - wallBottomZ);
+                const xRight = box.max.x; 
+                const xLeft = box.min.x;
+                gridPoints.push(new THREE.Vector3(xLeft, backWallZ, z), new THREE.Vector3(xRight, backWallZ, z));
+                tickPoints.push(new THREE.Vector3(xRight, backWallZ, z), new THREE.Vector3(xRight + tickLen, backWallZ, z));
+                item.sprite.position.set(xRight + tickLen + gap + 0.125, backWallZ, z); 
+            }
+            else if (item.type === 'iv_left') {
+                const z = wallBottomZ + item.ratio * (wallTopZ - wallBottomZ);
+                const yBack = box.max.y;
+                const yFront = box.min.y;
+                gridPoints.push(new THREE.Vector3(leftWallX, yFront, z), new THREE.Vector3(leftWallX, yBack, z));
+                tickPoints.push(new THREE.Vector3(leftWallX, yFront, z), new THREE.Vector3(leftWallX, yFront - tickLen, z));
+                item.sprite.position.set(leftWallX, yFront - tickLen - gap - 0.125, z);
+            }
+            else if (item.type === 'strike') {
+                const x = box.min.x + item.ratio * widthX;
+                gridPoints.push(new THREE.Vector3(x, backWallZ, wallBottomZ), new THREE.Vector3(x, backWallZ, wallTopZ));
+                tickPoints.push(new THREE.Vector3(x, backWallZ, wallBottomZ), new THREE.Vector3(x, backWallZ, wallBottomZ - tickLen));
+                item.sprite.position.set(x, backWallZ, wallBottomZ - tickLen - gap - 0.03125);
+            }
+            else if (item.type === 'dte') {
+                const y = box.min.y + item.ratio * depthY;
+                gridPoints.push(new THREE.Vector3(leftWallX, y, wallBottomZ), new THREE.Vector3(leftWallX, y, wallTopZ));
+                tickPoints.push(new THREE.Vector3(leftWallX, y, wallBottomZ), new THREE.Vector3(leftWallX, y, wallBottomZ - tickLen));
+                item.sprite.position.set(leftWallX, y, wallBottomZ - tickLen - gap - 0.03125);
+            }
+            else if (item.type === 'title_strike') {
+                item.sprite.position.set((box.max.x + box.min.x)/2, backWallZ, wallBottomZ - tickLen - gap - 0.15);
+            }
+            else if (item.type === 'title_dte') {
+                item.sprite.position.set(leftWallX, (box.max.y + box.min.y)/2, wallBottomZ - tickLen - gap - 0.15);
+            }
+            else if (item.type === 'title_iv') {
+                item.sprite.position.set(box.max.x + tickLen + gap + 0.125, backWallZ, wallTopZ + 0.1);
+            }
+        });
+        
+        if (!ticksMesh) {
+            const tMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+            ticksMesh = new THREE.LineSegments(new THREE.BufferGeometry(), tMat);
+            surfaceGroup.add(ticksMesh);
+            
+            const gMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.04 });
+            gridsMesh = new THREE.LineSegments(new THREE.BufferGeometry(), gMat);
+            surfaceGroup.add(gridsMesh);
+        }
+        ticksMesh.geometry.setFromPoints(tickPoints);
+        gridsMesh.geometry.setFromPoints(gridPoints);
     }
 
     controls.update(); 
@@ -450,6 +512,62 @@ function renderTick(frame) {
     updateLedger(frame);
     updateTargetIV(frame);
     evaluateHedging(frame);
+    updateAxes();
+}
+
+function updateAxes() {
+    if (!axisData) return;
+    axisData.forEach(item => surfaceGroup.remove(item.sprite));
+    axisData = [];
+    
+    const maxIV = Math.max(...target_IV);
+    const minIV = Math.min(...target_IV);
+    
+    // Vertical Density: 4 labels max
+    const ivSteps = maxIV > 0 ? [minIV, minIV + (maxIV - minIV)*0.33, minIV + (maxIV - minIV)*0.66, maxIV] : [0, 0.3, 0.6, 1.0];
+    
+    ivSteps.forEach(val => {
+        const text = (val * 100).toFixed(1);
+        const spriteBack = makeAxisLabel(text); 
+        const spriteLeft = makeAxisLabel(text); 
+        const ratio = maxIV > 0 ? (val - minIV) / (maxIV - minIV) : val;
+        
+        surfaceGroup.add(spriteBack);
+        surfaceGroup.add(spriteLeft);
+        axisData.push({ sprite: spriteBack, type: 'iv_back', ratio: ratio });
+        axisData.push({ sprite: spriteLeft, type: 'iv_left', ratio: ratio });
+    });
+    
+    // Horizontal Density: 5 labels
+    const numStrikes = 5;
+    for(let i=0; i<numStrikes; i++) {
+        const idx = Math.floor(i * (strikesList.length - 1) / (numStrikes - 1));
+        const strike = strikesList[idx] || 0;
+        const sprite = makeAxisLabel(strike.toFixed(1));
+        surfaceGroup.add(sprite);
+        axisData.push({ sprite: sprite, type: 'strike', ratio: i / (numStrikes - 1) });
+    }
+    
+    const numDtes = 5;
+    for(let i=0; i<numDtes; i++) {
+        const idx = Math.floor(i * (dtesList.length - 1) / (numDtes - 1));
+        const dte = dtesList[idx] || 0;
+        const sprite = makeAxisLabel(dte + 'd');
+        surfaceGroup.add(sprite);
+        axisData.push({ sprite: sprite, type: 'dte', ratio: i / (numDtes - 1) });
+    }
+    
+    const titleStrike = makeTextSprite("STRIKE"); 
+    surfaceGroup.add(titleStrike);
+    axisData.push({ sprite: titleStrike, type: 'title_strike' });
+
+    const titleDte = makeTextSprite("DTE");
+    surfaceGroup.add(titleDte);
+    axisData.push({ sprite: titleDte, type: 'title_dte' });
+    
+    const titleIv = makeTextSprite("IMPLIED VOL");
+    surfaceGroup.add(titleIv);
+    axisData.push({ sprite: titleIv, type: 'title_iv' });
 }
 
 function updateLedger(frame) {
