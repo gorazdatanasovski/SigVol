@@ -92,7 +92,7 @@ function makeAxisLabel(message) {
     canvas.height = 64;
     const context = canvas.getContext('2d');
     context.font = '400 24px "JetBrains Mono", monospace';
-    context.fillStyle = 'rgba(255, 255, 255, 0.35)'; // White at 35% opacity
+    context.fillStyle = 'rgba(255, 255, 255, 0.50)'; // White at 50% opacity
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillText(message, 128, 32);
@@ -147,9 +147,8 @@ function initThreeJS() {
 
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
-    // Camera Directive: Rotate 35° and tilt 8° upward. 
-    // Position zoomed out slightly based on feedback to prevent cropping
-    camera.position.set(2.34, -3.25, 1.56); 
+    // Camera Directive: Aggressive low angle, looking across the floor at the asymptote
+    camera.position.set(1.6, -2.5, 0.4); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -160,6 +159,7 @@ function initThreeJS() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.autoRotate = false;
     controls.enableDamping = true;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent camera from dropping under the floor
 
     // DIRECTIVE 2.7: Kill the "Flashlight" Specular Highlight
     // Replace with distant DirectionalLight and soft AmbientLight
@@ -325,11 +325,12 @@ function animate() {
                 }
             }
             
-            const totalZ = current_IV[i] + zRipple;
+            const rawZ = current_IV[i] + zRipple;
+            const totalZ = rawZ * 1.8; // Exaggerate the asymptote vertically (Directive 2.13)
             positions[i * 3 + 2] = totalZ;
 
-            // Map Z-height to V coordinate for the Isoline/Obsidian Texture
-            let v = totalZ / 1.5;
+            // Map Z-height to V coordinate using the RAW height for the Isoline/Obsidian Texture
+            let v = rawZ / 1.5;
             v = Math.max(0, Math.min(1, v));
             uvs[i * 2 + 1] = v;
         }
