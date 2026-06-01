@@ -117,7 +117,7 @@ function createIsolineTexture() {
     
     // V2.0 5-Stop Gradient Map
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    gradient.addColorStop(0.00, '#1A1F5E'); // Deep indigo
+    gradient.addColorStop(0.00, '#0A4275'); // Luminous cobalt base
     gradient.addColorStop(0.25, '#1A5276'); // Dark blue
     gradient.addColorStop(0.50, '#0E6655'); // Teal
     gradient.addColorStop(0.75, '#B7770D'); // Amber
@@ -204,7 +204,7 @@ function initThreeJS() {
         color: 0xffffff,
         wireframe: true,
         transparent: true,
-        opacity: 0.08
+        opacity: 0.25 // Weaponize the wireframe
     });
     const wireframeMesh = new THREE.Mesh(geometry, wireframeMaterial);
     surfaceGroup.add(wireframeMesh);
@@ -218,9 +218,9 @@ function initThreeJS() {
 
     // DIRECTIVE 2.8: The Panel Frames (Crisp Borders and Smoked Glass)
     const glassMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
+        color: 0x1A233A, // Smoked glass slate
         transparent: true,
-        opacity: 0.05,
+        opacity: 0.35, // Hardcode the wall contrast
         roughness: 0.1,
         metalness: 0.2,
         side: THREE.DoubleSide
@@ -228,7 +228,7 @@ function initThreeJS() {
 
     const wallGeo = new THREE.PlaneGeometry(1, 1);
     const edgesGeo = new THREE.EdgesGeometry(wallGeo);
-    const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.2, transparent: true });
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.25, transparent: true }); // Crisp 1px solid white border
 
     // Back Wall
     backWallMesh = new THREE.Mesh(wallGeo, glassMaterial);
@@ -419,7 +419,7 @@ function animate() {
         });
         
         if (!ticksMesh) {
-            const tMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+            const tMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }); // Anchored ticks
             ticksMesh = new THREE.LineSegments(new THREE.BufferGeometry(), tMat);
             surfaceGroup.add(ticksMesh);
             
