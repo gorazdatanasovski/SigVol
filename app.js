@@ -42,12 +42,10 @@ let dtesList = [];
 let ripples = [];
 let crosshair;
 let surfaceGroup;
-let floorMesh, backWallMesh, leftWallMesh;
-let axisData = [];
-let ticksMesh, gridsMesh;
-let sparseMesh, spineMesh, spineGlowMesh, rimMesh, crosshairMesh;
-let glowSpriteCore, glowSpriteCorona;
+let sparseMesh, sparseHighlightMesh, spineMesh, spineGlowMesh, rimMesh, crosshairMesh;
+let glowSpriteCore, glowSpriteCorona, beamMesh;
 let particlesMesh, particlesData = [];
+let floorMesh, floorHorizonMesh;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -152,6 +150,33 @@ function createEdgeAlphaTexture() {
     return texture;
 }
 
+function createHexTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; 
+    canvas.height = 110.85; 
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = 'rgba(18, 40, 64, 0.15)'; 
+    ctx.lineWidth = 2;
+    function hex(x, y, r) {
+        ctx.beginPath();
+        for(let i=0; i<6; i++) {
+            const a = i * Math.PI / 3;
+            ctx.lineTo(x + r*Math.cos(a), y + r*Math.sin(a));
+        }
+        ctx.closePath();
+        ctx.stroke();
+    }
+    hex(32, 27.71, 32); hex(32, 83.13, 32);
+    hex(0, 0, 32); hex(64, 0, 32);
+    hex(0, 55.42, 32); hex(64, 55.42, 32);
+    hex(0, 110.85, 32); hex(64, 110.85, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(30, 30);
+    return tex;
+}
+
 function createGlowTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 64;
@@ -173,17 +198,16 @@ function generateMeshColorCache() {
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 256, 0, 0);
-    // DIRECTIVE 1: Re-anchored Floor
-    gradient.addColorStop(0.00, '#1e4060'); 
-    gradient.addColorStop(0.20, '#2a5c8a'); 
-    gradient.addColorStop(0.40, '#3478b0'); 
-    gradient.addColorStop(0.60, '#4a9fd4'); 
-    // DIRECTIVE 4: Power-law Peak Approach
-    gradient.addColorStop(0.70, '#4a9fd4'); 
-    gradient.addColorStop(0.78, '#6cbde8'); 
-    gradient.addColorStop(0.85, '#90d4f5'); 
-    gradient.addColorStop(0.91, '#beeeff'); 
-    gradient.addColorStop(0.96, '#e4f8ff'); 
+    gradient.addColorStop(0.00, '#06111e'); 
+    gradient.addColorStop(0.12, '#06111e'); 
+    gradient.addColorStop(0.28, '#0b1e38'); 
+    gradient.addColorStop(0.45, '#0f2e56'); 
+    gradient.addColorStop(0.60, '#164a80'); 
+    gradient.addColorStop(0.72, '#2068aa'); 
+    gradient.addColorStop(0.82, '#3490d0'); 
+    gradient.addColorStop(0.90, '#52b0e8'); 
+    gradient.addColorStop(0.95, '#80cff5'); 
+    gradient.addColorStop(0.98, '#b4e8ff'); 
     gradient.addColorStop(1.00, '#ffffff'); 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 1, 256);
@@ -191,10 +215,6 @@ function generateMeshColorCache() {
     for (let i = 0; i < 256; i++) {
         const idx = (255 - i) * 4; 
         let r = data[idx], g = data[idx+1], b = data[idx+2];
-        // DIRECTIVE 3: Mesh Visibility Floor (#2a5878 -> 42, 88, 120)
-        r = Math.max(r, 42);
-        g = Math.max(g, 88);
-        b = Math.max(b, 120);
         const c = new THREE.Color(`rgb(${r}, ${g}, ${b})`);
         meshColorsCache.push(c);
     }
@@ -206,48 +226,34 @@ function createIsolineTexture() {
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     
-    // DIRECTIVE 1 & 4: Floor and Power-law Peak
+    // 10-Stop Colormap
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    gradient.addColorStop(0.00, '#1e4060'); 
-    gradient.addColorStop(0.20, '#2a5c8a'); 
-    gradient.addColorStop(0.40, '#3478b0'); 
-    gradient.addColorStop(0.60, '#4a9fd4'); 
-    gradient.addColorStop(0.70, '#4a9fd4'); 
-    gradient.addColorStop(0.78, '#6cbde8'); 
-    gradient.addColorStop(0.85, '#90d4f5'); 
-    gradient.addColorStop(0.91, '#beeeff'); 
-    gradient.addColorStop(0.96, '#e4f8ff'); 
+    gradient.addColorStop(0.00, '#06111e'); 
+    gradient.addColorStop(0.12, '#06111e'); 
+    gradient.addColorStop(0.28, '#0b1e38'); 
+    gradient.addColorStop(0.45, '#0f2e56'); 
+    gradient.addColorStop(0.60, '#164a80'); 
+    gradient.addColorStop(0.72, '#2068aa'); 
+    gradient.addColorStop(0.82, '#3490d0'); 
+    gradient.addColorStop(0.90, '#52b0e8'); 
+    gradient.addColorStop(0.95, '#80cff5'); 
+    gradient.addColorStop(0.98, '#b4e8ff'); 
     gradient.addColorStop(1.00, '#ffffff'); 
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 256, 1024);
     
-    // DIRECTIVE 2: Skew Cyan Shift (Put Wing)
-    const cyanGradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    cyanGradient.addColorStop(0.00, '#15324d'); 
-    cyanGradient.addColorStop(0.20, '#204a6e'); 
-    cyanGradient.addColorStop(0.40, '#2a8ab0'); // +12 Green hue shift
-    cyanGradient.addColorStop(0.60, '#3aa6d4'); 
-    cyanGradient.addColorStop(0.70, 'rgba(74, 159, 212, 0)'); 
-    cyanGradient.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
-
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = 256;
-    maskCanvas.height = 1024;
-    const mCtx = maskCanvas.getContext('2d');
-    mCtx.fillStyle = cyanGradient;
-    mCtx.fillRect(0, 0, 256, 1024);
-    
-    mCtx.globalCompositeOperation = 'destination-in';
-    const hGrad = mCtx.createLinearGradient(0, 0, 256, 0);
-    hGrad.addColorStop(0.0, 'rgba(0,0,0,1)'); // Solid on put wing
-    hGrad.addColorStop(0.35, 'rgba(0,0,0,0)'); // Fade before ATM
-    hGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
-    mCtx.fillStyle = hGrad;
-    mCtx.fillRect(0, 0, 256, 1024);
-    
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(maskCanvas, 0, 0);
+    // Specular Zone (Wet Depth)
+    const specGrad = ctx.createRadialGradient(128, 256, 0, 128, 256, 45); 
+    specGrad.addColorStop(0, 'rgba(200, 236, 250, 0.16)'); 
+    specGrad.addColorStop(1, 'rgba(200, 236, 250, 0)');
+    ctx.save();
+    ctx.translate(128, 256);
+    ctx.scale(1, 50/90); 
+    ctx.translate(-128, -256);
+    ctx.fillStyle = specGrad;
+    ctx.fillRect(0, 0, 256, 1024);
+    ctx.restore();
     
     // Topographic Contours (70th, 85th, 95th)
     ctx.fillStyle = 'rgba(160, 228, 255, 0.28)';
@@ -361,6 +367,22 @@ function initThreeJS() {
         });
     }
     
+    // DIRECTIVE 4: The Descent Beam
+    const beamGeo = new THREE.CylinderGeometry(0.003, 0.001, 0.35, 8); 
+    beamGeo.rotateX(Math.PI / 2); 
+    const bCount = beamGeo.attributes.position.count;
+    const bColors = new Float32Array(bCount * 3);
+    for (let i = 0; i < bCount; i++) {
+        const z = beamGeo.attributes.position.array[i*3+2]; 
+        const ratio = (z + 0.175) / 0.35; 
+        const intensity = 0.05 + 0.25 * ratio; 
+        bColors[i*3] = intensity; bColors[i*3+1] = intensity; bColors[i*3+2] = intensity; 
+    }
+    beamGeo.setAttribute('color', new THREE.BufferAttribute(bColors, 3));
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xc8f0ff, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    beamMesh = new THREE.Mesh(beamGeo, beamMat);
+    surfaceGroup.add(beamMesh);
+
     // DIRECTIVE 5: Crosshair at Peak
     const crossGeo = new THREE.BufferGeometry();
     const crossSize = 0.05; // visually small gunsight
@@ -372,11 +394,12 @@ function initThreeJS() {
     crosshairMesh = new THREE.LineSegments(crossGeo, crossMat);
     surfaceGroup.add(crosshairMesh);
 
-    // DIRECTIVE 7: Floor to 4x4 maximum, near-invisible dark tone
-    floorMesh = new THREE.GridHelper(2, 4, 0x1a1d24, 0x1a1d24);
-    floorMesh.material.opacity = 1.0;
-    floorMesh.material.transparent = true;
-    floorMesh.rotation.x = Math.PI / 2; // Align to local XY plane
+    // DIRECTIVE 7: Floor Pattern
+    const floorGeo = new THREE.PlaneGeometry(8, 8);
+    const floorMat = new THREE.MeshBasicMaterial({ 
+        map: createHexTexture(), transparent: true, opacity: 1.0, depthWrite: false 
+    });
+    floorMesh = new THREE.Mesh(floorGeo, floorMat);
     surfaceGroup.add(floorMesh);
 
     // DIRECTIVE 2.8: The Panel Frames (Crisp Borders and Smoked Glass)
@@ -509,6 +532,7 @@ function animate() {
         const orbZ = maxZ + 0.35;
         if (glowSpriteCore) glowSpriteCore.position.set(maxX, maxY, orbZ);
         if (glowSpriteCorona) glowSpriteCorona.position.set(maxX, maxY, orbZ);
+        if (beamMesh) beamMesh.position.set(maxX, maxY, maxZ + 0.175);
         if (crosshairMesh) crosshairMesh.position.set(maxX, maxY, maxZ + 0.005);
         
         // Particle Physics
@@ -563,12 +587,16 @@ function animate() {
         const pPos = geometry.attributes.position.array;
         const lightDir = new THREE.Vector3(-1, 1, 1).normalize();
         const vNormal = new THREE.Vector3();
+        const vPos = new THREE.Vector3();
+        const camPos = camera.position;
+        const fresnelColor = new THREE.Color(0x4ab8ec);
+        
         for (let i = 0; i < geometry.attributes.position.count; i++) {
             vNormal.set(normals[i*3], normals[i*3+1], normals[i*3+2]);
-            const dot = vNormal.dot(lightDir);
+            const dotLight = vNormal.dot(lightDir);
             let lum = 1.0;
-            if (dot > 0) lum += dot * 0.10;
-            else lum += dot * 0.06;
+            if (dotLight > 0) lum += dotLight * 0.10;
+            else lum += dotLight * 0.06;
             
             // Surface Luminosity Response (+8%)
             const vx = pPos[i*3];
@@ -582,51 +610,81 @@ function animate() {
                 lum += lift;
             }
             
-            colors[i*3] = lum;
-            colors[i*3+1] = lum;
-            colors[i*3+2] = lum;
+            // Fresnel Rim
+            vPos.set(vx, vy, pPos[i*3+2]);
+            const viewDir = vPos.clone().sub(camPos).normalize();
+            const viewDot = Math.abs(vNormal.dot(viewDir)); 
+            const fresnel = Math.pow(1.0 - viewDot, 3.0); 
+            
+            let r = lum, g = lum, b = lum;
+            if (fresnel > 0.4) {
+                const blend = (fresnel - 0.4) / 0.6; 
+                r = r * (1 - blend) + fresnelColor.r * blend;
+                g = g * (1 - blend) + fresnelColor.g * blend;
+                b = b * (1 - blend) + fresnelColor.b * blend;
+            }
+            
+            colors[i*3] = r;
+            colors[i*3+1] = g;
+            colors[i*3+2] = b;
         }
         geometry.attributes.color.needsUpdate = true;
         
-        // DIRECTIVE 2: Precision 10x10 Structural Mesh
+        // Hierarchical 8x8 Structural Mesh
         const sparsePoints = [];
-        const xStep = Math.max(1, Math.floor(gridX / 10));
-        const yStep = Math.max(1, Math.floor(gridY / 10));
+        const xStep = Math.max(1, Math.floor(gridX / 8));
+        const yStep = Math.max(1, Math.floor(gridY / 8));
         const atmStrikeIndex = Math.floor(gridX / 2); // Approximate ATM strike
         
-        function addHierarchicalLine(idx1, idx2, weight) {
+        function addHierarchicalLine(idx1, idx2, weight, isHighlight) {
             const z1 = positions[idx1*3+2];
             const z2 = positions[idx2*3+2];
             for (let w = 0; w < weight; w++) {
                 const offset = w * 0.0005; // tiny duplicate offset for thickness illusion
-                sparsePoints.push(
-                    new THREE.Vector3(positions[idx1*3] + offset, positions[idx1*3+1] + offset, z1),
-                    new THREE.Vector3(positions[idx2*3] + offset, positions[idx2*3+1] + offset, z2)
-                );
+                sparsePoints.push({
+                    p1: new THREE.Vector3(positions[idx1*3] + offset, positions[idx1*3+1] + offset, z1),
+                    p2: new THREE.Vector3(positions[idx2*3] + offset, positions[idx2*3+1] + offset, z2),
+                    highlight: isHighlight
+                });
             }
         }
 
         for (let ix = 0; ix < gridX; ix += xStep) {
             const isATM = Math.abs(ix - atmStrikeIndex) <= (xStep / 2);
-            const weight = isATM ? 3 : 1; // 35% pseudo-thickness for ATM
+            const weight = isATM ? 2 : 1; 
             for (let iy = 0; iy < gridY - 1; iy++) {
-                addHierarchicalLine(iy * gridX + ix, (iy + 1) * gridX + ix, weight);
+                addHierarchicalLine(iy * gridX + ix, (iy + 1) * gridX + ix, weight, isATM);
             }
         }
         for (let iy = 0; iy < gridY; iy += yStep) {
             const isFront = (iy === 0);
-            const weight = isFront ? 2 : 1; // 30% pseudo-thickness for front
+            const weight = isFront ? 2 : 1; 
             for (let ix = 0; ix < gridX - 1; ix++) {
-                addHierarchicalLine(iy * gridX + ix, iy * gridX + (ix + 1), weight);
+                addHierarchicalLine(iy * gridX + ix, iy * gridX + (ix + 1), weight, isFront);
             }
         }
         
         if (!sparseMesh) {
-            const smat = new THREE.LineBasicMaterial({ color: 0x4a9fc4, transparent: true, opacity: 0.22 }); 
+            const smat = new THREE.LineBasicMaterial({ color: 0x1e5070, transparent: true, opacity: 0.18 }); 
             sparseMesh = new THREE.LineSegments(new THREE.BufferGeometry(), smat);
             surfaceGroup.add(sparseMesh);
+            
+            const shmat = new THREE.LineBasicMaterial({ color: 0x2878a0, transparent: true, opacity: 0.30 }); 
+            sparseHighlightMesh = new THREE.LineSegments(new THREE.BufferGeometry(), shmat);
+            surfaceGroup.add(sparseHighlightMesh);
         }
-        sparseMesh.geometry.setFromPoints(sparsePoints);
+        
+        const basePts = [];
+        const highPts = [];
+        for (let i = 0; i < sparsePoints.length; i++) {
+            if (sparsePoints[i].highlight) {
+                highPts.push(sparsePoints[i].p1, sparsePoints[i].p2);
+            } else {
+                basePts.push(sparsePoints[i].p1, sparsePoints[i].p2);
+            }
+        }
+        sparseMesh.geometry.setFromPoints(basePts);
+        sparseHighlightMesh.geometry.setFromPoints(highPts);
         
         // DIRECTIVE 1: ATM Spine Trace
         const spinePoints = [];
@@ -652,11 +710,11 @@ function animate() {
         }
         
         if (!spineMesh) {
-            const sMat = new THREE.LineBasicMaterial({ color: 0x7dd4f7, transparent: true, opacity: 0.65 });
+            const sMat = new THREE.LineBasicMaterial({ color: 0x6ac4ee, transparent: true, opacity: 0.42 });
             spineMesh = new THREE.LineSegments(new THREE.BufferGeometry(), sMat);
             surfaceGroup.add(spineMesh);
             
-            const sgMat = new THREE.LineBasicMaterial({ color: 0x7dd4f7, transparent: true, opacity: 0.20 });
+            const sgMat = new THREE.LineBasicMaterial({ color: 0x6ac4ee, transparent: true, opacity: 0.10 });
             spineGlowMesh = new THREE.LineSegments(new THREE.BufferGeometry(), sgMat);
             surfaceGroup.add(spineGlowMesh);
         }
@@ -706,10 +764,22 @@ function animate() {
         const heightZ = box.max.z - box.min.z;
         
         const horizPadding = widthX * 0.12; 
-        const vertPadding = heightZ * 0.40; // Decisively lowered to create space beneath surface
+        const vertPadding = heightZ * 0.40; 
         
-        // Floor Position: Standalone grid pushed down further
+        // Floor Position: Standalone plane pushed down further
         floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - vertPadding);
+        
+        // DIRECTIVE 7: Horizon Line
+        if (!floorHorizonMesh) {
+            const hMat = new THREE.LineBasicMaterial({ color: 0x1e4a6a, transparent: true, opacity: 0.35 });
+            floorHorizonMesh = new THREE.LineSegments(new THREE.BufferGeometry(), hMat);
+            surfaceGroup.add(floorHorizonMesh);
+        }
+        const horizPts = [
+            new THREE.Vector3(positions[0], positions[1], positions[2] + 0.005),
+            new THREE.Vector3(positions[(gridX - 1)*3], positions[(gridX - 1)*3+1], positions[(gridX - 1)*3+2] + 0.005)
+        ];
+        floorHorizonMesh.geometry.setFromPoints(horizPts);
         
         // Wall Scales: Extend the wall height down to the floor grid, top edge stays at max.z
         const wallHeightZ = heightZ + vertPadding;
