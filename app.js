@@ -46,7 +46,7 @@ let floorMesh, backWallMesh, leftWallMesh;
 let axisData = [];
 let ticksMesh, gridsMesh;
 let sparseMesh;
-let glowSprite;
+let glowSpriteCore, glowSpriteCorona;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -120,7 +120,7 @@ function createEdgeAlphaTexture() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, 512, 512);
     
-    const edgeSize = 77;
+    const edgeSize = 51; // Reduced to 10% from 15%
     
     let gLeft = ctx.createLinearGradient(0, 0, edgeSize, 0);
     gLeft.addColorStop(0, 'rgba(0,0,0,1)');
@@ -165,18 +165,48 @@ function createGlowTexture() {
     return new THREE.CanvasTexture(canvas);
 }
 
+let meshColorsCache = [];
+function generateMeshColorCache() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 256, 0, 0);
+    gradient.addColorStop(0.00, '#0b0e15'); 
+    gradient.addColorStop(0.35, '#1a283c'); 
+    gradient.addColorStop(0.62, '#9b4400'); 
+    gradient.addColorStop(0.82, '#d67508'); 
+    gradient.addColorStop(0.94, '#f2ba38'); 
+    gradient.addColorStop(0.99, '#fce880'); 
+    gradient.addColorStop(1.00, '#ffffff'); 
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1, 256);
+    const data = ctx.getImageData(0, 0, 1, 256).data;
+    for (let i = 0; i < 256; i++) {
+        const idx = (255 - i) * 4; 
+        const c = new THREE.Color(`rgb(${data[idx]}, ${data[idx+1]}, ${data[idx+2]})`);
+        const hsl = {};
+        c.getHSL(hsl);
+        c.setHSL(hsl.h, hsl.s, Math.min(1.0, hsl.l + 0.22)); // +22% luminosity
+        meshColorsCache.push(c);
+    }
+}
+
 function createIsolineTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 1;
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     
-    // V2.0 5-Stop Gradient Map
+    // Bloomberg Amber-Gold progression
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
-    gradient.addColorStop(0.00, '#0a0c10'); // Near-black void base
-    gradient.addColorStop(0.33, '#1a2639'); // Desaturated steel-blue
-    gradient.addColorStop(0.66, '#e8edf5'); // Cool white-platinum
-    gradient.addColorStop(1.00, '#ffffff'); // Overexposed peak
+    gradient.addColorStop(0.00, '#0b0e15'); // Base floor
+    gradient.addColorStop(0.35, '#1a283c'); // Cold body
+    gradient.addColorStop(0.62, '#9b4400'); // Transition to amber
+    gradient.addColorStop(0.82, '#d67508'); // Warm amber
+    gradient.addColorStop(0.94, '#f2ba38'); // Gold
+    gradient.addColorStop(0.99, '#fce880'); // Bright gold near peak
+    gradient.addColorStop(1.00, '#ffffff'); // Blown-out apex
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 1, 1024);
@@ -202,8 +232,8 @@ function initThreeJS() {
 
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     
-    // DIRECTIVE 6: Reposition Camera (33deg elevation, rotate azimuth)
-    camera.position.set(2.95, -1.99, 2.40); 
+    // DIRECTIVE 5: Camera Realignment (Pulled back 20%, Lowered 6deg)
+    camera.position.set(3.77, -2.54, 2.42); 
     camera.up.set(0, 0, 1);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -253,18 +283,22 @@ function initThreeJS() {
     surfaceMesh = new THREE.Mesh(geometry, material);
     surfaceGroup.add(surfaceMesh);
 
-    // DIRECTIVE 2: Peak Bloom Sprite
-    const glowMat = new THREE.SpriteMaterial({
-        map: createGlowTexture(),
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
+    generateMeshColorCache();
+
+    // DIRECTIVE 2: Peak Bloom as Property, not Object
+    const coreMat = new THREE.SpriteMaterial({
+        map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending
     });
-    glowSprite = new THREE.Sprite(glowMat);
-    glowSprite.scale.set(0.6, 0.6, 1); 
-    surfaceGroup.add(glowSprite);
+    glowSpriteCore = new THREE.Sprite(coreMat);
+    glowSpriteCore.scale.set(0.15, 0.15, 1); // 8px tight core
+    surfaceGroup.add(glowSpriteCore);
+
+    const coronaMat = new THREE.SpriteMaterial({
+        map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.06, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    glowSpriteCorona = new THREE.Sprite(coronaMat);
+    glowSpriteCorona.scale.set(0.4, 0.4, 1); // 22px soft corona
+    surfaceGroup.add(glowSpriteCorona);
 
     // DIRECTIVE 7: Floor to 4x4 maximum, near-invisible dark tone
     floorMesh = new THREE.GridHelper(2, 4, 0x1a1d24, 0x1a1d24);
@@ -400,45 +434,51 @@ function animate() {
             uvs[i * 2 + 1] = v;
         }
 
-        if (glowSprite) {
-            glowSprite.position.set(maxX, maxY, maxZ);
-        }
+        if (glowSpriteCore) glowSpriteCore.position.set(maxX, maxY, maxZ);
+        if (glowSpriteCorona) glowSpriteCorona.position.set(maxX, maxY, maxZ);
 
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.uv.needsUpdate = true;
         geometry.computeVertexNormals(); 
         
-        // DIRECTIVE 3: Sparse 8x8 Structural Mesh
+        // DIRECTIVE 3: Sparse 8x8 Structural Mesh with Vertex Colors
         const sparsePoints = [];
+        const sparseColors = [];
         const xStep = Math.max(1, Math.floor(gridX / 8));
         const yStep = Math.max(1, Math.floor(gridY / 8));
         
+        function addLine(idx1, idx2) {
+            const z1 = positions[idx1*3+2];
+            const z2 = positions[idx2*3+2];
+            sparsePoints.push(
+                new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], z1),
+                new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], z2)
+            );
+            const cIdx1 = Math.max(0, Math.min(255, Math.floor((z1 / 1.5) * 255)));
+            const cIdx2 = Math.max(0, Math.min(255, Math.floor((z2 / 1.5) * 255)));
+            const c1 = meshColorsCache[cIdx1] || new THREE.Color(0xffffff);
+            const c2 = meshColorsCache[cIdx2] || new THREE.Color(0xffffff);
+            sparseColors.push(c1.r, c1.g, c1.b, c2.r, c2.g, c2.b);
+        }
+
         for (let ix = 0; ix < gridX; ix += xStep) {
             for (let iy = 0; iy < gridY - 1; iy++) {
-                const idx1 = iy * gridX + ix;
-                const idx2 = (iy + 1) * gridX + ix;
-                sparsePoints.push(
-                    new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2]),
-                    new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2])
-                );
+                addLine(iy * gridX + ix, (iy + 1) * gridX + ix);
             }
         }
         for (let iy = 0; iy < gridY; iy += yStep) {
             for (let ix = 0; ix < gridX - 1; ix++) {
-                const idx1 = iy * gridX + ix;
-                const idx2 = iy * gridX + (ix + 1);
-                sparsePoints.push(
-                    new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2]),
-                    new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2])
-                );
+                addLine(iy * gridX + ix, iy * gridX + (ix + 1));
             }
         }
+        
         if (!sparseMesh) {
-            const smat = new THREE.LineBasicMaterial({ color: 0x1a2639, transparent: true, opacity: 0.25 }); 
+            const smat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.18 }); 
             sparseMesh = new THREE.LineSegments(new THREE.BufferGeometry(), smat);
             surfaceGroup.add(sparseMesh);
         }
         sparseMesh.geometry.setFromPoints(sparsePoints);
+        sparseMesh.geometry.setAttribute('color', new THREE.Float32BufferAttribute(sparseColors, 3));
         
         // DIRECTIVE 2.7: Dynamic Bounding Box Anchoring
         surfaceMesh.geometry.computeBoundingBox();
