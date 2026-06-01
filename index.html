@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantitative Execution Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Three.js and OrbitControls -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+        }
+      }
+    </script>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="brand">
+                <span class="brand-name">SigVol</span>
+                <span class="model-badge">rBergomi</span>
+            </div>
+            <div class="status-group">
+                <div class="status-pill">
+                    <div class="status-dot"></div>
+                    HFT Feed Live
+                </div>
+                <div class="status-pill">CVaR Δ Neutral</div>
+                <div class="timestamp" id="top-timestamp">--:--:--</div>
+            </div>
+        </div>
+        
+        <!-- Left Panel: Risk Ledger -->
+        <div class="risk-panel">
+            <div class="panel-label">RISK LEDGER</div>
+            
+            <div class="metric">
+                <div class="metric-label">SPOT PRICE</div>
+                <div class="metric-value hero" id="val-spot">0.00</div>
+                <div class="voltage-bar">
+                    <div class="voltage-bar-fill" id="bar-spot" style="width: 0%;"></div>
+                </div>
+            </div>
+            
+            <div class="metric">
+                <div class="metric-label">NET DELTA</div>
+                <div class="metric-value" id="val-delta">0</div>
+                <div class="voltage-bar">
+                    <div class="voltage-bar-fill" id="bar-delta" style="width: 0%;"></div>
+                </div>
+            </div>
+            
+            <div class="metric">
+                <div class="metric-label">TOTAL GAMMA</div>
+                <div class="metric-value compact" id="val-gamma">0</div>
+                <div class="voltage-bar">
+                    <div class="voltage-bar-fill" id="bar-gamma" style="width: 0%;"></div>
+                </div>
+            </div>
+            
+            <div class="metric">
+                <div class="metric-label">TOTAL VEGA</div>
+                <div class="metric-value compact" id="val-vega">0</div>
+                <div class="voltage-bar">
+                    <div class="voltage-bar-fill" id="bar-vega" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Surface + Log -->
+        <div class="main-panel">
+            <!-- WebGL Surface -->
+            <div class="vol-surface-container" id="surface-container">
+                <!-- Three.js Canvas will be injected here -->
+                <div class="vol-tooltip" id="custom-tooltip">
+                    <div class="label">Strike</div>
+                    <div id="tt-strike">0.00</div>
+                    <div class="label" style="margin-top:4px">Expiry</div>
+                    <div id="tt-dte">0d</div>
+                    <div class="label" style="margin-top:4px">Implied Vol</div>
+                    <div id="tt-iv">0.0%</div>
+                </div>
+            </div>
+
+            <!-- Execution Log -->
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-header-label">EXECUTION LOG</span>
+                    <span class="log-event-count" id="log-count">0 events</span>
+                </div>
+                <div class="log-entries" id="console-output">
+                    <!-- Logs go here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div class="status-group">
+                <span class="status-group-label">VIX</span>
+                <span class="status-group-value" id="val-vix">0.00</span>
+            </div>
+            <div class="status-group">
+                <span class="status-group-label">Regime</span>
+                <span class="status-group-value">Dynamic · Trending</span>
+            </div>
+            <div class="status-group">
+                <span class="status-group-label">Model</span>
+                <span class="status-group-value">H=0.10 · ν=1.41 · ρ=−0.70</span>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="app.js"></script>
+</body>
+</html>
