@@ -45,7 +45,7 @@ let surfaceGroup;
 let floorMesh, backWallMesh, leftWallMesh;
 let axisData = [];
 let ticksMesh, gridsMesh;
-let sparseMesh;
+let sparseMesh, spineMesh, spineGlowMesh, rimMesh, crosshairMesh;
 let glowSpriteCore, glowSpriteCorona;
 
 const raycaster = new THREE.Raycaster();
@@ -175,6 +175,7 @@ function generateMeshColorCache() {
     gradient.addColorStop(0.00, '#0d1f35'); 
     gradient.addColorStop(0.35, '#1a4a7a'); 
     gradient.addColorStop(0.62, '#2979b8'); 
+    gradient.addColorStop(0.65, '#3d9fd4'); // Subsurface luminosity peak OTM
     gradient.addColorStop(0.82, '#56b4e8'); 
     gradient.addColorStop(0.94, '#a8dff7'); 
     gradient.addColorStop(1.00, '#ffffff'); 
@@ -197,11 +198,12 @@ function createIsolineTexture() {
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     
-    // Ice Blue progression
+    // Ice Blue progression with subsurface luminosity
     const gradient = ctx.createLinearGradient(0, 1024, 0, 0);
     gradient.addColorStop(0.00, '#0d1f35'); // Deep cold navy floor
     gradient.addColorStop(0.35, '#1a4a7a'); // Medium navy lower body
     gradient.addColorStop(0.62, '#2979b8'); // Strong steel blue mid body
+    gradient.addColorStop(0.65, '#3d9fd4'); // Subsurface luminosity peak OTM
     gradient.addColorStop(0.82, '#56b4e8'); // Bright ice blue upper mid
     gradient.addColorStop(0.94, '#a8dff7'); // Pale electric blue high vol
     gradient.addColorStop(1.00, '#ffffff'); // Pure white apex
@@ -209,12 +211,13 @@ function createIsolineTexture() {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 1, 1024);
     
-    // 5 Contour Isolines at meaningful IV intervals
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    for (let i = 1; i <= 5; i++) {
-        const y = 1024 - (i * 170); // spaced contour loops
-        ctx.fillRect(0, y, 1, 2); // hair-thin
-    }
+    // Topographic Contours (70th, 85th, 95th)
+    ctx.fillStyle = 'rgba(160, 228, 255, 0.28)';
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.70)), 1, 1);
+    ctx.fillStyle = 'rgba(160, 228, 255, 0.38)';
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.85)), 1, 1);
+    ctx.fillStyle = 'rgba(160, 228, 255, 0.50)';
+    ctx.fillRect(0, Math.floor(1024 * (1 - 0.95)), 1, 1);
     
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
@@ -292,11 +295,22 @@ function initThreeJS() {
     surfaceGroup.add(glowSpriteCore);
 
     const coronaMat = new THREE.SpriteMaterial({
-        map: createGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.06, depthWrite: false, blending: THREE.AdditiveBlending
+        map: createGlowTexture(), color: 0xe8f8ff, transparent: true, opacity: 0.06, depthWrite: false, blending: THREE.AdditiveBlending
     });
     glowSpriteCorona = new THREE.Sprite(coronaMat);
     glowSpriteCorona.scale.set(0.4, 0.4, 1); // 22px soft corona
     surfaceGroup.add(glowSpriteCorona);
+    
+    // DIRECTIVE 5: Crosshair at Peak
+    const crossGeo = new THREE.BufferGeometry();
+    const crossSize = 0.05; // visually small gunsight
+    crossGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+        -crossSize, 0, 0,  crossSize, 0, 0,
+        0, -crossSize, 0,  0, crossSize, 0
+    ], 3));
+    const crossMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 });
+    crosshairMesh = new THREE.LineSegments(crossGeo, crossMat);
+    surfaceGroup.add(crosshairMesh);
 
     // DIRECTIVE 7: Floor to 4x4 maximum, near-invisible dark tone
     floorMesh = new THREE.GridHelper(2, 4, 0x1a1d24, 0x1a1d24);
@@ -434,49 +448,119 @@ function animate() {
 
         if (glowSpriteCore) glowSpriteCore.position.set(maxX, maxY, maxZ);
         if (glowSpriteCorona) glowSpriteCorona.position.set(maxX, maxY, maxZ);
+        if (crosshairMesh) crosshairMesh.position.set(maxX, maxY, maxZ + 0.005);
 
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.uv.needsUpdate = true;
         geometry.computeVertexNormals(); 
         
-        // DIRECTIVE 3: Sparse 8x8 Structural Mesh with Vertex Colors
+        // DIRECTIVE 2: Precision 10x10 Structural Mesh
         const sparsePoints = [];
-        const sparseColors = [];
-        const xStep = Math.max(1, Math.floor(gridX / 8));
-        const yStep = Math.max(1, Math.floor(gridY / 8));
+        const xStep = Math.max(1, Math.floor(gridX / 10));
+        const yStep = Math.max(1, Math.floor(gridY / 10));
+        const atmStrikeIndex = Math.floor(gridX / 2); // Approximate ATM strike
         
-        function addLine(idx1, idx2) {
+        function addHierarchicalLine(idx1, idx2, weight) {
             const z1 = positions[idx1*3+2];
             const z2 = positions[idx2*3+2];
-            sparsePoints.push(
-                new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], z1),
-                new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], z2)
-            );
-            const cIdx1 = Math.max(0, Math.min(255, Math.floor((z1 / 1.5) * 255)));
-            const cIdx2 = Math.max(0, Math.min(255, Math.floor((z2 / 1.5) * 255)));
-            const c1 = meshColorsCache[cIdx1] || new THREE.Color(0xffffff);
-            const c2 = meshColorsCache[cIdx2] || new THREE.Color(0xffffff);
-            sparseColors.push(c1.r, c1.g, c1.b, c2.r, c2.g, c2.b);
+            for (let w = 0; w < weight; w++) {
+                const offset = w * 0.0005; // tiny duplicate offset for thickness illusion
+                sparsePoints.push(
+                    new THREE.Vector3(positions[idx1*3] + offset, positions[idx1*3+1] + offset, z1),
+                    new THREE.Vector3(positions[idx2*3] + offset, positions[idx2*3+1] + offset, z2)
+                );
+            }
         }
 
         for (let ix = 0; ix < gridX; ix += xStep) {
+            const isATM = Math.abs(ix - atmStrikeIndex) <= (xStep / 2);
+            const weight = isATM ? 3 : 1; // 35% pseudo-thickness for ATM
             for (let iy = 0; iy < gridY - 1; iy++) {
-                addLine(iy * gridX + ix, (iy + 1) * gridX + ix);
+                addHierarchicalLine(iy * gridX + ix, (iy + 1) * gridX + ix, weight);
             }
         }
         for (let iy = 0; iy < gridY; iy += yStep) {
+            const isFront = (iy === 0);
+            const weight = isFront ? 2 : 1; // 30% pseudo-thickness for front
             for (let ix = 0; ix < gridX - 1; ix++) {
-                addLine(iy * gridX + ix, iy * gridX + (ix + 1));
+                addHierarchicalLine(iy * gridX + ix, iy * gridX + (ix + 1), weight);
             }
         }
         
         if (!sparseMesh) {
-            const smat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.18 }); 
+            const smat = new THREE.LineBasicMaterial({ color: 0x4a9fc4, transparent: true, opacity: 0.22 }); 
             sparseMesh = new THREE.LineSegments(new THREE.BufferGeometry(), smat);
             surfaceGroup.add(sparseMesh);
         }
         sparseMesh.geometry.setFromPoints(sparsePoints);
-        sparseMesh.geometry.setAttribute('color', new THREE.Float32BufferAttribute(sparseColors, 3));
+        
+        // DIRECTIVE 1: ATM Spine Trace
+        const spinePoints = [];
+        const spineGlowPoints = [];
+        for (let iy = 0; iy < gridY - 1; iy++) {
+            const idx1 = iy * gridX + atmStrikeIndex;
+            const idx2 = (iy + 1) * gridX + atmStrikeIndex;
+            const z1 = positions[idx1*3+2] + 0.005; 
+            const z2 = positions[idx2*3+2] + 0.005;
+            spinePoints.push(
+                new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], z1),
+                new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], z2)
+            );
+            // Parallel soft blur strokes
+            for (let g = -2; g <= 2; g++) {
+                if (g === 0) continue;
+                const offset = g * 0.002;
+                spineGlowPoints.push(
+                    new THREE.Vector3(positions[idx1*3] + offset, positions[idx1*3+1], z1),
+                    new THREE.Vector3(positions[idx2*3] + offset, positions[idx2*3+1], z2)
+                );
+            }
+        }
+        
+        if (!spineMesh) {
+            const sMat = new THREE.LineBasicMaterial({ color: 0x7dd4f7, transparent: true, opacity: 0.65 });
+            spineMesh = new THREE.LineSegments(new THREE.BufferGeometry(), sMat);
+            surfaceGroup.add(spineMesh);
+            
+            const sgMat = new THREE.LineBasicMaterial({ color: 0x7dd4f7, transparent: true, opacity: 0.20 });
+            spineGlowMesh = new THREE.LineSegments(new THREE.BufferGeometry(), sgMat);
+            surfaceGroup.add(spineGlowMesh);
+        }
+        spineMesh.geometry.setFromPoints(spinePoints);
+        spineGlowMesh.geometry.setFromPoints(spineGlowPoints);
+        
+        // DIRECTIVE 6: Lit Surface Edge Rim
+        const rimPoints = [];
+        const edgeOffset = 0.003;
+        for (let ix = 0; ix < gridX - 1; ix++) {
+            const idx1 = ix; // front edge (iy=0)
+            const idx2 = ix + 1;
+            rimPoints.push(
+                new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2] + edgeOffset),
+                new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2] + edgeOffset)
+            );
+        }
+        for (let iy = 0; iy < gridY - 1; iy++) {
+            const idx1 = iy * gridX; // left edge
+            const idx2 = (iy + 1) * gridX;
+            rimPoints.push(
+                new THREE.Vector3(positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2] + edgeOffset),
+                new THREE.Vector3(positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2] + edgeOffset)
+            );
+            
+            const idx3 = iy * gridX + (gridX - 1); // right edge
+            const idx4 = (iy + 1) * gridX + (gridX - 1);
+            rimPoints.push(
+                new THREE.Vector3(positions[idx3*3], positions[idx3*3+1], positions[idx3*3+2] + edgeOffset),
+                new THREE.Vector3(positions[idx4*3], positions[idx4*3+1], positions[idx4*3+2] + edgeOffset)
+            );
+        }
+        if (!rimMesh) {
+            const rMat = new THREE.LineBasicMaterial({ color: 0x5bbde0, transparent: true, opacity: 0.45 });
+            rimMesh = new THREE.LineSegments(new THREE.BufferGeometry(), rMat);
+            surfaceGroup.add(rimMesh);
+        }
+        rimMesh.geometry.setFromPoints(rimPoints);
         
         // DIRECTIVE 2.7: Dynamic Bounding Box Anchoring
         surfaceMesh.geometry.computeBoundingBox();
