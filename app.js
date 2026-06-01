@@ -349,7 +349,7 @@ function animate() {
         const heightZ = box.max.z - box.min.z;
         
         const horizPadding = widthX * 0.12; 
-        const vertPadding = heightZ * 0.08; // Triple/Quadruple the distance below the surface
+        const vertPadding = heightZ * 0.12; // Lowered further based on feedback
         
         // Floor Position: Standalone grid pushed down further
         floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - vertPadding);
