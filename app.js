@@ -41,6 +41,8 @@ let strikesList = [];
 let dtesList = [];
 let ripples = [];
 let crosshair;
+let surfaceGroup;
+let floorMesh, backWallMesh, leftWallMesh;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -131,24 +133,17 @@ function initThreeJS() {
     container.appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.autoRotate = false; // Stop auto-rotate so user can appreciate the fixed angle
+    controls.autoRotate = false;
     controls.enableDamping = true;
 
-    // Proper PBR-style light: Directional from upper-left (elevation 30deg)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Increased ambient to prevent pitch black
+    // DIRECTIVE 2.7: Kill the "Flashlight" Specular Highlight
+    // Replace with distant DirectionalLight and soft AmbientLight
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    dirLight.position.set(-3, 3, 3); // Key light
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(100, 200, 50); 
     scene.add(dirLight);
-
-    const fillLight = new THREE.DirectionalLight(0xa8d8ff, 0.8);
-    fillLight.position.set(3, 1, -2); // Fill light opposite side
-    scene.add(fillLight);
-    
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    rimLight.position.set(0, -3, 0); // Rim light from bottom
-    scene.add(rimLight);
 
     const firstFrame = playbackData[0];
     strikesList = [...new Set(firstFrame.vol_surface.map(item => item.strike))].sort((a, b) => a - b);
@@ -161,20 +156,23 @@ function initThreeJS() {
     
     const pbrTexture = createIsolineTexture();
     
+    // DIRECTIVE 2.7: Matte platinum sheen, not blinding plastic
     const material = new THREE.MeshPhysicalMaterial({ 
         map: pbrTexture,
         emissiveMap: pbrTexture,
         emissive: new THREE.Color(0xffffff),
-        emissiveIntensity: 0.3, // Prevents colors from falling into pure black
+        emissiveIntensity: 0.3, 
         side: THREE.DoubleSide,
-        roughness: 0.2, // Polished obsidian but readable
-        metalness: 0.5, // Reduced metalness to preserve color saturation
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.1
+        roughness: 0.35, // matte sheen
+        metalness: 0.9,  // high metalness
+        clearcoat: 0.0   // kill the plastic reflection
     });
 
+    surfaceGroup = new THREE.Group();
+    scene.add(surfaceGroup);
+
     surfaceMesh = new THREE.Mesh(geometry, material);
-    scene.add(surfaceMesh);
+    surfaceGroup.add(surfaceMesh);
 
     // Bloomberg-style subtle wireframe overlay for structural readability
     const wireframeMaterial = new THREE.MeshBasicMaterial({
@@ -184,7 +182,32 @@ function initThreeJS() {
         opacity: 0.08
     });
     const wireframeMesh = new THREE.Mesh(geometry, wireframeMaterial);
-    scene.add(wireframeMesh);
+    surfaceGroup.add(wireframeMesh);
+
+    // DIRECTIVE 2.7: Orthogonal Glass Walls
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.05,
+        roughness: 0.1,
+        metalness: 0.2,
+        side: THREE.DoubleSide
+    });
+
+    floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
+    // Floor is flat (no rotation needed relative to XY plane)
+    surfaceGroup.add(floorMesh);
+
+    backWallMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
+    // Back Wall stands straight up
+    backWallMesh.rotation.x = Math.PI / 2;
+    surfaceGroup.add(backWallMesh);
+
+    leftWallMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glassMaterial);
+    // Left Wall stands straight up AND turns 90 degrees
+    leftWallMesh.rotation.x = Math.PI / 2;
+    leftWallMesh.rotation.y = Math.PI / 2;
+    surfaceGroup.add(leftWallMesh);
 
     // Crosshair for tooltip
     const crosshairGeo = new THREE.BufferGeometry().setFromPoints([
@@ -197,23 +220,7 @@ function initThreeJS() {
     crosshair.visible = false;
     scene.add(crosshair);
     
-    const boxMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.05, transparent: true });
-    const boxGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-1, -1, 0), new THREE.Vector3(1, -1, 0),
-        new THREE.Vector3(1, -1, 0), new THREE.Vector3(1, 1, 0),
-        new THREE.Vector3(1, 1, 0), new THREE.Vector3(-1, 1, 0),
-        new THREE.Vector3(-1, 1, 0), new THREE.Vector3(-1, -1, 0),
-        new THREE.Vector3(-1, -1, 0), new THREE.Vector3(-1, -1, 1.5),
-        new THREE.Vector3(1, -1, 0), new THREE.Vector3(1, -1, 1.5),
-        new THREE.Vector3(1, 1, 0), new THREE.Vector3(1, 1, 1.5),
-        new THREE.Vector3(-1, 1, 0), new THREE.Vector3(-1, 1, 1.5),
-        new THREE.Vector3(-1, -1, 1.5), new THREE.Vector3(1, -1, 1.5),
-        new THREE.Vector3(1, -1, 1.5), new THREE.Vector3(1, 1, 1.5),
-        new THREE.Vector3(1, 1, 1.5), new THREE.Vector3(-1, 1, 1.5),
-        new THREE.Vector3(-1, 1, 1.5), new THREE.Vector3(-1, -1, 1.5)
-    ]);
-    const boxLines = new THREE.LineSegments(boxGeo, boxMaterial);
-    scene.add(boxLines);
+    // Removed hardcoded bounding box lines
 
     // Anchored labels
     const labelStrike = makeTextSprite("STRIKE");
@@ -311,6 +318,26 @@ function animate() {
         geometry.attributes.position.needsUpdate = true;
         geometry.attributes.uv.needsUpdate = true;
         geometry.computeVertexNormals(); 
+        
+        // DIRECTIVE 2.7: Dynamic Bounding Box Anchoring
+        surfaceMesh.geometry.computeBoundingBox();
+        const box = new THREE.Box3().setFromObject(surfaceMesh);
+        
+        const widthX = box.max.x - box.min.x;
+        const depthY = box.max.y - box.min.y;
+        const heightZ = box.max.z - box.min.z;
+        
+        // Floor Position: Y-coordinate mathematically mapped to local Z
+        floorMesh.scale.set(widthX, depthY, 1);
+        floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z);
+        
+        // Back Wall Position: Depth coordinate mathematically mapped to local Y
+        backWallMesh.scale.set(widthX, heightZ, 1);
+        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y, (box.max.z + box.min.z) / 2);
+        
+        // Left Wall Position: exactly box.min.x
+        leftWallMesh.scale.set(depthY, heightZ, 1);
+        leftWallMesh.position.set(box.min.x, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     }
 
     controls.update(); 
