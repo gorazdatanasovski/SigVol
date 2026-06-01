@@ -343,25 +343,26 @@ function animate() {
         surfaceMesh.geometry.computeBoundingBox();
         const box = new THREE.Box3().setFromObject(surfaceMesh);
         
+        // DIRECTIVE 2.9: Spatial Calibration & Exact Bounding Dimensions
         const widthX = box.max.x - box.min.x;
         const depthY = box.max.y - box.min.y;
         const heightZ = box.max.z - box.min.z;
         
-        // DIRECTIVE 2.8: The Anti-Box Rule (Corner gaps and elevation)
-        const gap = 0.06; // Empty space distance
-        const shrink = 0.94; // Shrink panel width by 6% to leave the corner open
+        const horizPadding = widthX * 0.12; // 12% gap offset (Double the previous spatial gap)
+        const vertPadding = heightZ * 0.02; // 2% floor elevation
         
-        // Floor Position: Standalone grid hovering exactly below the surface
-        // GridHelper does not scale like a plane, it is fixed size 2x2. We just position it.
-        floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - gap);
+        // Floor Position: Standalone grid pushed down by 2%
+        floorMesh.position.set((box.max.x + box.min.x) / 2, (box.max.y + box.min.y) / 2, box.min.z - vertPadding);
         
-        // Back Wall Position: Shrink width, push back, and elevate above floor
-        backWallMesh.scale.set(widthX * shrink, heightZ, 1);
-        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + gap, ((box.max.z + box.min.z) / 2) + gap);
+        // Wall Scales: Exact dimensions of the data bounding box. Not a pixel more.
+        backWallMesh.scale.set(widthX, heightZ, 1);
+        leftWallMesh.scale.set(depthY, heightZ, 1);
         
-        // Left Wall Position: Shrink depth, push left, and elevate above floor
-        leftWallMesh.scale.set(depthY * shrink, heightZ, 1);
-        leftWallMesh.position.set(box.min.x - gap, (box.max.y + box.min.y) / 2, ((box.max.z + box.min.z) / 2) + gap);
+        // Back Wall: Pushed back by horizPadding. Z perfectly cups data (bottom at min.z, top at max.z)
+        backWallMesh.position.set((box.max.x + box.min.x) / 2, box.max.y + horizPadding, (box.max.z + box.min.z) / 2);
+        
+        // Left Wall: Pushed left by horizPadding. Z perfectly cups data (bottom at min.z, top at max.z)
+        leftWallMesh.position.set(box.min.x - horizPadding, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     }
 
     controls.update(); 
